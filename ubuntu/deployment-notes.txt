@@ -1,0 +1,62 @@
+GoPlatform 单服务部署速记（Ubuntu）
+
+1) systemd 服务文件（仅主服务）
+sudo vim /etc/systemd/system/ad-platform-main.service
+
+[Unit]
+Description=AD Platform Main Service
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/GoPlatform
+ExecStart=/data/GoPlatform/ad-platform-main
+Restart=on-failure
+RestartSec=10
+Environment="ENVIRONMENT=production"
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ad-platform-main
+
+[Install]
+WantedBy=multi-user.target
+
+2) 基础命令
+sudo systemctl daemon-reload
+sudo systemctl start ad-platform-main
+sudo systemctl enable ad-platform-main
+sudo systemctl status ad-platform-main
+
+3) 放行端口（按需）
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 8960/tcp
+sudo ufw allow 5432/tcp
+sudo ufw allow 6379/tcp
+sudo ufw allow 6650/tcp
+sudo ufw allow 8080/tcp
+
+4) 同步部署资产
+sudo cp /data/GoPlatform/scripts/nginx.conf /etc/nginx/
+sudo cp /data/GoPlatform/scripts/postgresql.conf /etc/postgresql/15/main/
+sudo cp /data/GoPlatform/scripts/ad-platform-main.service /etc/systemd/system/
+sudo chmod 644 /etc/systemd/system/ad-platform-main.service
+sudo systemctl daemon-reload
+
+5) 构建与重启
+cd /data/GoPlatform
+go mod download
+go mod tidy
+go build -o ad-platform-main ./cmd/main.go
+sudo systemctl restart ad-platform-main
+
+6) 日志排查
+sudo journalctl -u ad-platform-main -n 100 --no-pager
+sudo journalctl -u ad-platform-main -f
+
+7) 常用运维
+sudo systemctl stop ad-platform-main
+sudo systemctl start ad-platform-main
+sudo systemctl restart ad-platform-main
+sudo systemctl disable ad-platform-main

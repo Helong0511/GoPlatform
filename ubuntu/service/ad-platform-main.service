@@ -1,0 +1,147 @@
+# ===============================================
+# 主管理服务 - 资源分配配置
+# 适用于高性能服务器环境
+# ===============================================
+
+[Unit]
+# 服务描述
+Description=AD Platform Main Service
+
+# 启动顺序：在网络、PostgreSQL和Redis服务之后启动
+After=network.target postgresql.service redis-server.service
+
+# 依赖关系：必须依赖PostgreSQL和Redis服务
+Requires=postgresql.service redis-server.service
+
+[Service]
+# 服务类型：简单类型（直接运行可执行文件）
+Type=simple
+
+# 运行用户和组：使用root用户（临时解决方案，后续可改为专用用户）
+User=root
+Group=root
+
+# 工作目录
+WorkingDirectory=/data/GoPlatform
+
+# 执行命令：启动主管理服务
+ExecStart=/data/GoPlatform/ad-platform-main
+
+# 重启策略：总是重启（即使正常退出也重启）
+Restart=always
+
+# 重启间隔：5秒（中等恢复速度）
+RestartSec=5
+
+# 启动限制：无时间限制
+StartLimitInterval=0
+
+# 启动爆发：允许10次快速重启
+StartLimitBurst=10
+
+# ===============================================
+# 环境变量配置
+# ===============================================
+
+# 运行环境：生产环境
+Environment="ENVIRONMENT=production"
+
+# Go最大CPU核心数：1核（主服务资源适中，在4核服务器中分配25%CPU）
+Environment="GOMAXPROCS=1"
+
+# Go垃圾回收阈值：80%（主服务内存使用适中）
+Environment="GOGC=80"
+
+# Go崩溃时的堆栈跟踪：crash模式（详细信息）
+Environment="GOTRACEBACK=crash"
+
+# Go内存管理优化：使用madvdontneed减少内存占用
+Environment="GODEBUG=madvdontneed=1"
+
+# 内存分配器配置：优化内存回收延迟
+Environment="MALLOC_CONF=dirty_decay_ms:30000,muzzy_decay_ms:30000"
+
+# 数据库连接配置
+Environment="DB_HOST=localhost"
+Environment="DB_PORT=5432"
+Environment="DB_USER=postgres"
+Environment="DB_PASSWORD=kb7$rL3d8!tQ"
+Environment="DB_NAME=ad_platform"
+
+# JWT密钥配置
+Environment="JWT_SECRET=NeofZ7iF8tNW6GzkyMZfsGmitY6r6Gwn6D5BU433Vu9lkFwciS2PApBkPMurQuexc9ZgWUjxQA6ZBHMx_bdvHQ"
+
+# AES密钥配置
+Environment="AES_SECRET_KEY=awwYDrn0ojn2p7y2hNL/kg=="
+
+# ===============================================
+# 资源限制配置
+# ===============================================
+
+# 文件描述符限制：524288（支持大量并发连接）
+LimitNOFILE=524288
+
+# 进程数限制：32768
+LimitNPROC=32768
+
+# 内存锁定限制：无限制（允许锁定内存以提高性能）
+LimitMEMLOCK=infinity
+
+# 地址空间限制：无限制（允许使用全部内存）
+LimitAS=infinity
+
+# ===============================================
+# 调度策略和优先级
+# ===============================================
+
+# 进程优先级：0（普通优先级）
+Nice=0
+
+# CPU调度策略：RR（实时轮询）
+CPUSchedulingPolicy=rr
+
+# CPU调度优先级：90（中等优先级）
+CPUSchedulingPriority=90
+
+# I/O权重：70（中等I/O优先级）
+IOWeight=70
+
+# ===============================================
+# 内存管理
+# ===============================================
+
+# OOM分数调整：-500（降低被OOM killer杀死的概率）
+OOMScoreAdjust=-500
+
+# ===============================================
+# 日志配置
+# ===============================================
+
+# 标准输出：发送到journal
+StandardOutput=journal
+
+# 标准错误：发送到journal
+StandardError=journal
+
+# 日志标识符：ad-platform-main
+SyslogIdentifier=ad-platform-main
+
+# ===============================================
+# 安全设置
+# ===============================================
+
+# 禁止新特权：提高安全性
+NoNewPrivileges=true
+
+# 私有临时目录：隔离临时文件
+PrivateTmp=true
+
+# 保护系统文件：只读访问
+ProtectSystem=full
+
+# 保护用户主目录：禁止访问
+ProtectHome=true
+
+[Install]
+# 安装目标：多用户模式
+WantedBy=multi-user.target

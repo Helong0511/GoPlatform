@@ -1,0 +1,99 @@
+server:
+  port: 8960
+  host: 0.0.0.0
+  timeout: 30s
+
+# 数据库连接池配置
+# 适用于4核CPU，16GB内存服务器的高并发配置
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: ""
+  dbname: ad_platform
+  sslmode: disable
+  max_open_conns: 16
+  max_idle_conns: 8
+  conn_max_lifetime: 30m
+  conn_max_idle_time: 10m
+  cluster:
+    - host: localhost
+      port: 5432
+      user: postgres
+      password: ""
+      dbname: ad_platform
+      sslmode: disable
+      max_open_conns: 16
+      max_idle_conns: 8
+      conn_max_lifetime: 30m
+      conn_max_idle_time: 10m
+
+# Redis连接池配置
+# 适用于4核CPU，16GB内存服务器的高并发配置
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 80
+  min_idle_conns: 20
+  dial_timeout: 2s
+  read_timeout: 1s
+  write_timeout: 1s
+  idle_timeout: 5m
+  max_retries: 3
+  min_retry_backoff: 100ms
+  max_retry_backoff: 1s
+  cluster:
+    - host: localhost
+      port: 6379
+      password: ""
+      db: 0
+      pool_size: 80
+      min_idle_conns: 20
+      dial_timeout: 2s
+      read_timeout: 1s
+      write_timeout: 1s
+      idle_timeout: 5m
+      max_retries: 3
+      min_retry_backoff: 100ms
+      max_retry_backoff: 1s
+
+pulsar:
+  url: "pulsar://localhost:6650"
+  topic: "persistent://public/default/ad_reports"
+  subscription: "ad_report_consumer"
+  max_message_size: 1048576
+
+jwt:
+  secret: ""
+  expires_in: 1h
+
+security:
+  # Rust 动态库路径按运行平台设置：
+  # - Windows(debug):  ./rust-security/target/debug/rust_security.dll
+  # - Windows(release):./rust-security/target/release/rust_security.dll
+  # - Linux(release):  ./rust-security/target/release/librust_security.so
+  rust_lib_path: ./rust-security/target/debug/rust_security.dll
+  aes_secret: ""
+
+metrics:
+  port: 9090
+  path: /metrics
+
+logging:
+  level: info
+  format: json
+
+# CORS 跨域配置
+cors:
+  allow_origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+    - "https://yh-ad.com"
+    - "http://yh-ad.com"
+
+# 速率限制配置
+rate_limit:
+  requests_per_second: 50.0
+  burst: 200

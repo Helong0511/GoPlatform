@@ -1,0 +1,16 @@
+[package]
+name = "rust-security"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rust_security"
+crate-type = ["cdylib"]
+
+[dependencies]
+aes-gcm = "0.10"
+base64 = "0.22"
+hex = "0.4"
+jsonwebtoken = "9"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
