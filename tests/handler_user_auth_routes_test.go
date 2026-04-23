@@ -18,6 +18,7 @@ func TestUserEnableDisableAuthValidationRoutes(t *testing.T) {
 	t.Run("enable user with invalid id returns bad request", func(t *testing.T) {
 		engine := gin.New()
 		protected := engine.Group("/api/admin")
+		protected.Use(injectPermissions("user:update"))
 		handler := apiuser.NewUserHandler(nil)
 		handler.SetupRoutes(protected)
 
@@ -44,6 +45,7 @@ func TestUserEnableDisableAuthValidationRoutes(t *testing.T) {
 	t.Run("enable user with invalid operator id returns unauthorized", func(t *testing.T) {
 		engine := gin.New()
 		protected := engine.Group("/api/admin")
+		protected.Use(injectPermissions("user:update"))
 		protected.Use(func(c *gin.Context) {
 			c.Set("user_id", "not-a-number")
 			c.Next()
@@ -74,6 +76,7 @@ func TestUserEnableDisableAuthValidationRoutes(t *testing.T) {
 	t.Run("disable user with invalid operator id returns unauthorized", func(t *testing.T) {
 		engine := gin.New()
 		protected := engine.Group("/api/admin")
+		protected.Use(injectPermissions("user:update"))
 		protected.Use(func(c *gin.Context) {
 			c.Set("user_id", "not-a-number")
 			c.Next()

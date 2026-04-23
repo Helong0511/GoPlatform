@@ -14,6 +14,9 @@ const (
 	EnvJWTSecret     = "JWT_SECRET"
 	EnvRedisPassword = "REDIS_PASSWORD"
 	EnvAESSecretKey  = "AES_SECRET_KEY"
+	EnvEnvironment   = "ENVIRONMENT"
+	// EnvAuthAllowPublicRegister 为 "1"/"true"/"yes"/"on" 时开放公开注册
+	EnvAuthAllowPublicRegister = "AUTH_ALLOW_PUBLIC_REGISTER"
 )
 
 // GetEnvTrim 返回去除首尾空白后的环境变量值。

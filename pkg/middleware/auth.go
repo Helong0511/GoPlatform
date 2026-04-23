@@ -2,9 +2,11 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"ad-platform/internal/admin"
+	"ad-platform/pkg/auth"
 	"ad-platform/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -52,13 +54,48 @@ func AuthMiddleware(userService *admin.UserService) gin.HandlerFunc {
 	}
 }
 
+// UserContextMiddleware 基于JWT用户ID加载用户详情
+func UserContextMiddleware(userService *admin.UserService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr, exists := auth.GetUserIDFromContext(c)
+		if !exists {
+			response.Unauthorized(c, response.MsgUserNotAuthenticated)
+			c.Abort()
+			return
+		}
+
+		userID, err := strconv.ParseUint(userIDStr, 10, 32)
+		if err != nil {
+			response.Unauthorized(c, response.MsgUserNotAuthenticated)
+			c.Abort()
+			return
+		}
+
+		user, err := userService.GetUserByID(uint(userID))
+		if err != nil {
+			response.Unauthorized(c, response.MsgUserNotAuthenticated)
+			c.Abort()
+			return
+		}
+
+		if !user.Status {
+			response.Forbidden(c, response.MsgUserDisabled)
+			c.Abort()
+			return
+		}
+
+		c.Set("user", user)
+		c.Next()
+	}
+}
+
 // RBACMiddleware 基于角色的访问控制中间件
 func RBACMiddleware(requiredPermission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 从上下文中获取用户信息
 		user, exists := c.Get("user")
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": response.MsgUserNotAuthenticated})
+			response.Unauthorized(c, response.MsgUserNotAuthenticated)
 			c.Abort()
 			return
 		}
@@ -88,7 +125,7 @@ func RBACMiddleware(requiredPermission string) gin.HandlerFunc {
 		}
 
 		if !hasPermission {
-			c.JSON(http.StatusForbidden, gin.H{"error": response.MsgInsufficientPermissions})
+			response.Forbidden(c, response.MsgInsufficientPermissions)
 			c.Abort()
 			return
 		}
@@ -103,7 +140,7 @@ func DepartmentMiddleware() gin.HandlerFunc {
 		// 从上下文中获取用户信息
 		user, exists := c.Get("user")
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": response.MsgUserNotAuthenticated})
+			response.Unauthorized(c, response.MsgUserNotAuthenticated)
 			c.Abort()
 			return
 		}
@@ -120,7 +157,7 @@ func DepartmentMiddleware() gin.HandlerFunc {
 
 		// 检查用户是否属于某个部门
 		if u.DepartmentID == nil {
-			c.JSON(http.StatusForbidden, gin.H{"error": response.MsgDepartmentNotAssigned})
+			response.Forbidden(c, response.MsgDepartmentNotAssigned)
 			c.Abort()
 			return
 		}

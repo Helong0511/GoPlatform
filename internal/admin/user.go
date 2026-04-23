@@ -63,7 +63,7 @@ func (s *UserService) CreateUser(user *User) error {
 // GetUserByID 根据ID获取用户
 func (s *UserService) GetUserByID(id uint) (*User, error) {
 	var user User
-	err := s.db.DB.Preload("Roles").Preload("Department").First(&user, id).Error
+	err := s.db.DB.Preload("Roles.Permissions").Preload("Department").First(&user, id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.ErrUserNotFound

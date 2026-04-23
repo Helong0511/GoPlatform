@@ -70,6 +70,7 @@ func TestUserListRouteSuccessWithMeta(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	protected := engine.Group("/api/admin")
+	protected.Use(injectPermissions("user:read"))
 
 	fakeSvc := &fakeUserService{}
 	handler := apiuser.NewUserHandlerWithService(fakeSvc)
@@ -103,9 +104,10 @@ func TestReportListRouteSuccessWithMetaAndFilters(t *testing.T) {
 	engine := gin.New()
 	public := engine.Group("/api")
 	protected := engine.Group("/api/admin")
+	protected.Use(injectPermissions("report:read"))
 
 	fakeSvc := &fakeReportService{}
-	handler := apireport.NewReportHandlerWithService(fakeSvc)
+	handler := apireport.NewReportHandlerWithService(fakeSvc, nil)
 	handler.SetupRoutes(engine, public, protected)
 
 	start := "2026-04-20T00:00:00Z"

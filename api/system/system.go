@@ -11,12 +11,14 @@ import (
 
 // SystemHandler 系统相关处理器
 type SystemHandler struct {
-	// 可以添加需要的服务依赖
+	allowPublicRegister bool
 }
 
 // NewSystemHandler 创建系统处理器
-func NewSystemHandler() *SystemHandler {
-	return &SystemHandler{}
+func NewSystemHandler(allowPublicRegister bool) *SystemHandler {
+	return &SystemHandler{
+		allowPublicRegister: allowPublicRegister,
+	}
 }
 
 // SetupRoutes 设置系统相关路由
@@ -37,14 +39,17 @@ func (h *SystemHandler) rootHandler(c *gin.Context) {
 	resp["message"] = response.MsgWelcomeAdPlatformAPI
 	resp["status"] = response.MsgStatusOK
 	resp["version"] = "1.0.0"
-	resp["endpoints"] = gin.H{
-		"health":   "/health",
-		"login":    "/api/login",
-		"register": "/api/register",
-		"ads":      "/api/ads",
-		"report":   "/api/report",
-		"admin":    "/api/admin",
+	endpoints := gin.H{
+		"health": "/health",
+		"login":  "/api/login",
+		"ads":    "/api/ads",
+		"report": "/api/report",
+		"admin":  "/api/admin",
 	}
+	if h.allowPublicRegister {
+		endpoints["register"] = "/api/register"
+	}
+	resp["endpoints"] = endpoints
 	c.JSON(http.StatusOK, resp)
 }
 

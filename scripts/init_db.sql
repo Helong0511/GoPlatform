@@ -693,7 +693,8 @@ VALUES ('user:create', '创建用户'),
     ('client:read', '读取客户'),
     ('client:update', '更新客户'),
     ('client:delete', '删除客户'),
-    ('report:read', '读取报告') ON CONFLICT (name) DO NOTHING;
+    ('report:read', '读取报告'),
+    ('report:create', '批量或补录上报') ON CONFLICT (name) DO NOTHING;
 -- 插入初始角色数据
 INSERT INTO roles (name, description)
 VALUES ('super_admin', '超级管理员'),
@@ -745,7 +746,8 @@ WHERE (
                 'ad:update',
                 'client:read',
                 'client:update',
-                'report:read'
+                'report:read',
+                'report:create'
             )
         )
         OR -- salesperson 角色 (个人客户管理权限)

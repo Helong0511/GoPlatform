@@ -4,8 +4,9 @@ import (
 	"errors"
 	"strconv"
 
-	"ad-platform/internal/common"
 	"ad-platform/internal/admin"
+	"ad-platform/internal/common"
+	"ad-platform/pkg/middleware"
 	"ad-platform/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -28,17 +29,17 @@ func (h *RoleHandler) SetupRoutes(protected *gin.RouterGroup) {
 	// 角色管理
 	roles := protected.Group("/roles")
 	{
-		roles.GET("", h.listRoles)
-		roles.GET("/:id", h.getRole)
-		roles.POST("", h.createRole)
-		roles.PUT("/:id", h.updateRole)
-		roles.DELETE("/:id", h.deleteRole)
-		roles.POST("/:id/permissions", h.assignPermissions)
-		roles.POST("/assign", h.assignRoles)
+		roles.GET("", middleware.RBACMiddleware("role:read"), h.listRoles)
+		roles.GET("/:id", middleware.RBACMiddleware("role:read"), h.getRole)
+		roles.POST("", middleware.RBACMiddleware("role:create"), h.createRole)
+		roles.PUT("/:id", middleware.RBACMiddleware("role:update"), h.updateRole)
+		roles.DELETE("/:id", middleware.RBACMiddleware("role:delete"), h.deleteRole)
+		roles.POST("/:id/permissions", middleware.RBACMiddleware("role:update"), h.assignPermissions)
+		roles.POST("/assign", middleware.RBACMiddleware("role:update"), h.assignRoles)
 	}
 
 	// 权限管理
-	protected.GET("/permissions", h.listPermissions)
+	protected.GET("/permissions", middleware.RBACMiddleware("role:read"), h.listPermissions)
 }
 
 // listRoles 列出角色

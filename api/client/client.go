@@ -4,8 +4,9 @@ import (
 	"errors"
 	"strconv"
 
-	"ad-platform/internal/common"
 	"ad-platform/internal/admin"
+	"ad-platform/internal/common"
+	"ad-platform/pkg/middleware"
 	"ad-platform/pkg/response"
 	"ad-platform/pkg/util"
 
@@ -29,11 +30,11 @@ func (h *ClientHandler) SetupRoutes(protected *gin.RouterGroup) {
 	// 客户管理
 	clients := protected.Group("/clients")
 	{
-		clients.GET("", h.listClients)
-		clients.GET("/:id", h.getClient)
-		clients.POST("", h.createClient)
-		clients.PUT("/:id", h.updateClient)
-		clients.DELETE("/:id", h.deleteClient)
+		clients.GET("", middleware.RBACMiddleware("client:read"), h.listClients)
+		clients.GET("/:id", middleware.RBACMiddleware("client:read"), h.getClient)
+		clients.POST("", middleware.RBACMiddleware("client:create"), h.createClient)
+		clients.PUT("/:id", middleware.RBACMiddleware("client:update"), h.updateClient)
+		clients.DELETE("/:id", middleware.RBACMiddleware("client:delete"), h.deleteClient)
 	}
 }
 

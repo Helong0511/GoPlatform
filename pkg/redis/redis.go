@@ -39,19 +39,19 @@ func NewRedisClient(config *util.RedisConfig) (*RedisClient, error) {
 	if err != nil {
 		writeTimeout = 3 * time.Second
 	}
-	
+
 	// 解析空闲超时时间
 	idleTimeout, err := time.ParseDuration(config.IdleTimeout)
 	if err != nil {
 		idleTimeout = 5 * time.Minute
 	}
-	
+
 	// 解析重试间隔
 	minRetryBackoff, err := time.ParseDuration(config.MinRetryBackoff)
 	if err != nil {
 		minRetryBackoff = 100 * time.Millisecond
 	}
-	
+
 	maxRetryBackoff, err := time.ParseDuration(config.MaxRetryBackoff)
 	if err != nil {
 		maxRetryBackoff = 1 * time.Second
@@ -94,40 +94,49 @@ func NewRedisClusterClient(configs []*util.RedisConfig) (*RedisClusterClient, er
 	}
 
 	// 解析超时配置
-	dialTimeout, _ := time.ParseDuration(configs[0].DialTimeout)
-	readTimeout, _ := time.ParseDuration(configs[0].ReadTimeout)
-	writeTimeout, _ := time.ParseDuration(configs[0].WriteTimeout)
-	
+	dialTimeout, err := time.ParseDuration(configs[0].DialTimeout)
+	if err != nil {
+		dialTimeout = 5 * time.Second
+	}
+	readTimeout, err := time.ParseDuration(configs[0].ReadTimeout)
+	if err != nil {
+		readTimeout = 3 * time.Second
+	}
+	writeTimeout, err := time.ParseDuration(configs[0].WriteTimeout)
+	if err != nil {
+		writeTimeout = 3 * time.Second
+	}
+
 	// 解析空闲超时时间
-	idleTimeout, _ := time.ParseDuration(configs[0].IdleTimeout)
-	if idleTimeout == 0 {
+	idleTimeout, err := time.ParseDuration(configs[0].IdleTimeout)
+	if err != nil {
 		idleTimeout = 5 * time.Minute
 	}
-	
+
 	// 解析重试间隔
-	minRetryBackoff, _ := time.ParseDuration(configs[0].MinRetryBackoff)
-	if minRetryBackoff == 0 {
+	minRetryBackoff, err := time.ParseDuration(configs[0].MinRetryBackoff)
+	if err != nil {
 		minRetryBackoff = 100 * time.Millisecond
 	}
-	
-	maxRetryBackoff, _ := time.ParseDuration(configs[0].MaxRetryBackoff)
-	if maxRetryBackoff == 0 {
+
+	maxRetryBackoff, err := time.ParseDuration(configs[0].MaxRetryBackoff)
+	if err != nil {
 		maxRetryBackoff = 1 * time.Second
 	}
 
 	// 创建Redis集群客户端
 	client := redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs:            addrs,
-		Password:         configs[0].Password,
-		PoolSize:         configs[0].PoolSize,
-		MinIdleConns:     configs[0].MinIdleConns,
-		DialTimeout:      dialTimeout,
-		ReadTimeout:      readTimeout,
-		WriteTimeout:     writeTimeout,
-		IdleTimeout:      idleTimeout,
-		MaxRetries:       configs[0].MaxRetries,
-		MinRetryBackoff:  minRetryBackoff,
-		MaxRetryBackoff:  maxRetryBackoff,
+		Addrs:           addrs,
+		Password:        configs[0].Password,
+		PoolSize:        configs[0].PoolSize,
+		MinIdleConns:    configs[0].MinIdleConns,
+		DialTimeout:     dialTimeout,
+		ReadTimeout:     readTimeout,
+		WriteTimeout:    writeTimeout,
+		IdleTimeout:     idleTimeout,
+		MaxRetries:      configs[0].MaxRetries,
+		MinRetryBackoff: minRetryBackoff,
+		MaxRetryBackoff: maxRetryBackoff,
 	})
 
 	// 测试连接

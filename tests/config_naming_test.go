@@ -89,3 +89,17 @@ rate_limit:
 		t.Fatalf("unexpected redis cluster node: %+v", cfg.Redis.Cluster[0])
 	}
 }
+
+func TestPublicRegisterEnabledDefaultsByEnvironment(t *testing.T) {
+	devConfig := &util.Config{Environment: "development"}
+	devConfig.SetDefaults()
+	if !devConfig.PublicRegisterEnabled() {
+		t.Fatalf("expected public register enabled by default in development")
+	}
+
+	prodConfig := &util.Config{Environment: "production"}
+	prodConfig.SetDefaults()
+	if prodConfig.PublicRegisterEnabled() {
+		t.Fatalf("expected public register disabled by default in production")
+	}
+}

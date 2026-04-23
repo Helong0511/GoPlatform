@@ -52,7 +52,7 @@ func main() {
 
 	// 启动监控服务器
 	log.Printf("Starting metrics server on port %d...", config.Metrics.Port)
-	metrics.StartServer(config.Metrics.Port)
+	metrics.StartServer(config.Metrics.Port, config.Metrics.Path)
 	log.Println("Metrics server started")
 
 	// 初始化数据库
@@ -123,6 +123,17 @@ func main() {
 	}
 	log.Printf("JWT secret loaded from %s", jwtSource)
 
+	jwtExpiresIn, err := time.ParseDuration(config.JWT.ExpiresIn)
+	if err != nil {
+		log.Fatalf("Invalid JWT expires_in: %v", err)
+	}
+
+	serverTimeout, err := time.ParseDuration(config.Server.Timeout)
+	if err != nil {
+		log.Printf("Warning: invalid server timeout, fallback to 30s: %v", err)
+		serverTimeout = 30 * time.Second
+	}
+
 	// 初始化路由
 	log.Println("Initializing router...")
 	router, err := api.NewRouter(
@@ -133,6 +144,8 @@ func main() {
 		reportService,
 		securityManager,
 		jwtSecret,
+		jwtExpiresIn,
+		config.PublicRegisterEnabled(),
 		aesSecret,
 	)
 	if err != nil {
@@ -170,8 +183,12 @@ func main() {
 	// 创建 HTTP 服务器
 	log.Println("Creating HTTP server...")
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port),
-		Handler: engine,
+		Addr:              fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port),
+		Handler:           engine,
+		ReadTimeout:       serverTimeout,
+		WriteTimeout:      serverTimeout,
+		IdleTimeout:       serverTimeout,
+		ReadHeaderTimeout: serverTimeout,
 	}
 	log.Printf("HTTP server created on %s:%d", config.Server.Host, config.Server.Port)
 

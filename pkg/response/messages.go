@@ -126,4 +126,5 @@ const (
 	MsgInvalidClientID           = "Invalid client ID"
 	MsgInvalidDepartmentID       = "Invalid department ID"
 	MsgInvalidRoleID             = "Invalid role ID"
+	MsgRegistrationDisabled      = "Public registration is disabled"
 )

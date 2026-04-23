@@ -19,6 +19,7 @@ func TestAdActiveRouteValidation(t *testing.T) {
 	engine := gin.New()
 	public := engine.Group("/api")
 	protected := engine.Group("/api/admin")
+	protected.Use(injectPermissions("ad:read"))
 	handler := apiad.NewAdHandler(nil, nil)
 	handler.SetupRoutes(engine, public, protected)
 
@@ -53,7 +54,8 @@ func TestReportListRouteValidation(t *testing.T) {
 	engine := gin.New()
 	public := engine.Group("/api")
 	protected := engine.Group("/api/admin")
-	handler := apireport.NewReportHandler(nil)
+	protected.Use(injectPermissions("report:read"))
+	handler := apireport.NewReportHandler(nil, nil)
 	handler.SetupRoutes(engine, public, protected)
 
 	req := httptest.NewRequest(

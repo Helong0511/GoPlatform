@@ -1,7 +1,14 @@
+environment: production
+
 server:
   port: 8960
   host: 0.0.0.0
   timeout: 30s
+
+# 认证：allow_public_register 支持 true/false；不配置时按 environment 自动决定
+# （development/dev/local 默认开启，其它默认关闭）
+auth:
+  allow_public_register: false
 
 # 数据库连接池配置
 # 适用于4核CPU，16GB内存服务器的高并发配置

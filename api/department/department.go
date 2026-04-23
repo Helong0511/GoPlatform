@@ -4,8 +4,9 @@ import (
 	"errors"
 	"strconv"
 
-	"ad-platform/internal/common"
 	"ad-platform/internal/admin"
+	"ad-platform/internal/common"
+	"ad-platform/pkg/middleware"
 	"ad-platform/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -28,11 +29,11 @@ func (h *DepartmentHandler) SetupRoutes(protected *gin.RouterGroup) {
 	// 部门管理
 	departments := protected.Group("/departments")
 	{
-		departments.GET("", h.listDepartments)
-		departments.GET("/:id", h.getDepartment)
-		departments.POST("", h.createDepartment)
-		departments.PUT("/:id", h.updateDepartment)
-		departments.DELETE("/:id", h.deleteDepartment)
+		departments.GET("", middleware.RBACMiddleware("department:read"), h.listDepartments)
+		departments.GET("/:id", middleware.RBACMiddleware("department:read"), h.getDepartment)
+		departments.POST("", middleware.RBACMiddleware("department:create"), h.createDepartment)
+		departments.PUT("/:id", middleware.RBACMiddleware("department:update"), h.updateDepartment)
+		departments.DELETE("/:id", middleware.RBACMiddleware("department:delete"), h.deleteDepartment)
 	}
 }
 

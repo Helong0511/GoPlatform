@@ -13,15 +13,22 @@ import (
 
 // AuthHandler 认证相关处理器
 type AuthHandler struct {
-	userService    *admin.UserService
-	authMiddleware *auth.AuthMiddleware
+	userService         *admin.UserService
+	authMiddleware      *auth.AuthMiddleware
+	tokenTTL            time.Duration
+	allowPublicRegister bool
 }
 
 // NewAuthHandler 创建认证处理器
-func NewAuthHandler(userService *admin.UserService, jwtSecret string) *AuthHandler {
+func NewAuthHandler(userService *admin.UserService, jwtSecret string, tokenTTL time.Duration, allowPublicRegister bool) *AuthHandler {
+	if tokenTTL <= 0 {
+		tokenTTL = time.Hour
+	}
 	return &AuthHandler{
-		userService:    userService,
-		authMiddleware: auth.NewAuthMiddleware(jwtSecret),
+		userService:         userService,
+		authMiddleware:      auth.NewAuthMiddleware(jwtSecret),
+		tokenTTL:            tokenTTL,
+		allowPublicRegister: allowPublicRegister,
 	}
 }
 
@@ -76,7 +83,7 @@ func (h *AuthHandler) login(c *gin.Context) {
 	if userTimezone == "" {
 		userTimezone = "Asia/Shanghai"
 	}
-	token, err := h.authMiddleware.GenerateJWT(strconv.Itoa(int(user.ID)), roleName, userTimezone, 24*time.Hour)
+	token, err := h.authMiddleware.GenerateJWT(strconv.Itoa(int(user.ID)), roleName, userTimezone, h.tokenTTL)
 	if err != nil {
 		response.InternalServerError(c, response.MsgFailedGenerateToken)
 		return
@@ -110,6 +117,11 @@ func (h *AuthHandler) login(c *gin.Context) {
 
 // register 注册
 func (h *AuthHandler) register(c *gin.Context) {
+	if !h.allowPublicRegister {
+		response.Forbidden(c, response.MsgRegistrationDisabled)
+		return
+	}
+
 	var req struct {
 		Username string `json:"username" binding:"required"`
 		Password string `json:"password" binding:"required,min=6"`

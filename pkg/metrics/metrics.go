@@ -83,9 +83,12 @@ func NewMetrics() *Metrics {
 }
 
 // StartServer 启动监控服务器
-func StartServer(port int) {
+func StartServer(port int, path string) {
+	if path == "" {
+		path = "/metrics"
+	}
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle(path, promhttp.Handler())
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),

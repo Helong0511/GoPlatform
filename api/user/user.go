@@ -4,9 +4,10 @@ import (
 	"errors"
 	"strconv"
 
-	"ad-platform/internal/common"
 	"ad-platform/internal/admin"
+	"ad-platform/internal/common"
 	"ad-platform/pkg/auth"
+	"ad-platform/pkg/middleware"
 	"ad-platform/pkg/response"
 	"ad-platform/pkg/util"
 
@@ -47,14 +48,14 @@ func NewUserHandlerWithService(userService userService) *UserHandler {
 func (h *UserHandler) SetupRoutes(protected *gin.RouterGroup) {
 	users := protected.Group("/users")
 	{
-		users.GET("", h.listUsers)
-		users.GET("/:id", h.getUser)
-		users.POST("", h.createUser)
-		users.PUT("/:id", h.updateUser)
-		users.DELETE("/:id", h.deleteUser)
-		users.PUT("/:id/enable", h.enableUser)
-		users.PUT("/:id/disable", h.disableUser)
-		users.GET("/:id/status-logs", h.getUserStatusLogs)
+		users.GET("", middleware.RBACMiddleware("user:read"), h.listUsers)
+		users.GET("/:id", middleware.RBACMiddleware("user:read"), h.getUser)
+		users.POST("", middleware.RBACMiddleware("user:create"), h.createUser)
+		users.PUT("/:id", middleware.RBACMiddleware("user:update"), h.updateUser)
+		users.DELETE("/:id", middleware.RBACMiddleware("user:delete"), h.deleteUser)
+		users.PUT("/:id/enable", middleware.RBACMiddleware("user:update"), h.enableUser)
+		users.PUT("/:id/disable", middleware.RBACMiddleware("user:update"), h.disableUser)
+		users.GET("/:id/status-logs", middleware.RBACMiddleware("user:read"), h.getUserStatusLogs)
 	}
 }
 

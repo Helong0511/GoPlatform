@@ -4,21 +4,33 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Server        ServerConfig    `yaml:"server"`
-	Database      DatabaseConfig  `yaml:"database"`
-	Redis         RedisConfig     `yaml:"redis"`
-	Pulsar        PulsarConfig    `yaml:"pulsar"`
-	JWT           JWTConfig       `yaml:"jwt"`
-	Security      SecurityConfig  `yaml:"security"`
-	Metrics       MetricsConfig   `yaml:"metrics"`
-	Logging       LoggingConfig   `yaml:"logging"`
-	CORS          CORSConfig      `yaml:"cors"`
-	RateLimit     RateLimitConfig `yaml:"rate_limit"`
+	Environment string          `yaml:"environment"`
+	Server      ServerConfig    `yaml:"server"`
+	Auth        AuthConfig      `yaml:"auth"`
+	Database    DatabaseConfig  `yaml:"database"`
+	Redis       RedisConfig     `yaml:"redis"`
+	Pulsar      PulsarConfig    `yaml:"pulsar"`
+	JWT         JWTConfig       `yaml:"jwt"`
+	Security    SecurityConfig  `yaml:"security"`
+	Metrics     MetricsConfig   `yaml:"metrics"`
+	Logging     LoggingConfig   `yaml:"logging"`
+	CORS        CORSConfig      `yaml:"cors"`
+	RateLimit   RateLimitConfig `yaml:"rate_limit"`
+}
+
+// AuthConfig 认证/注册相关开关
+type AuthConfig struct {
+	// AllowPublicRegister:
+	// - true: 强制开启公开注册
+	// - false: 强制关闭公开注册
+	// - nil: 按环境默认（development/local/dev 默认开启，其他默认关闭）
+	AllowPublicRegister *bool `yaml:"allow_public_register"`
 }
 
 type ServerConfig struct {
@@ -154,6 +166,28 @@ func LoadConfig(filePath string) (*Config, error) {
 	if envAESSecret := GetEnvTrim(EnvAESSecretKey); envAESSecret != "" {
 		config.Security.AESSecret = envAESSecret
 	}
+	if envEnvironment := GetEnvTrim(EnvEnvironment); envEnvironment != "" {
+		config.Environment = envEnvironment
+	}
+	if v := GetEnvTrim(EnvAuthAllowPublicRegister); v != "" {
+		envAllow := parseEnvBool(v)
+		config.Auth.AllowPublicRegister = &envAllow
+	}
 
 	return &config, nil
+}
+
+// PublicRegisterEnabled 返回最终公开注册开关。
+func (c *Config) PublicRegisterEnabled() bool {
+	if c.Auth.AllowPublicRegister != nil {
+		return *c.Auth.AllowPublicRegister
+	}
+
+	env := strings.ToLower(strings.TrimSpace(c.Environment))
+	return env == "development" || env == "dev" || env == "local"
+}
+
+func parseEnvBool(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return s == "1" || s == "true" || s == "yes" || s == "on"
 }

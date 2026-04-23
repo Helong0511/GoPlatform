@@ -1,73 +1,23 @@
 package report
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"strconv"
 	"time"
 
 	report "ad-platform/internal/report"
+	"ad-platform/internal/security"
+	"ad-platform/pkg/middleware"
 	"ad-platform/pkg/response"
 	"ad-platform/pkg/util"
 
 	"github.com/gin-gonic/gin"
 )
 
-// decryptAES 解密AES-256-GCM加密的数据
-func decryptAES(encryptedData string) (string, error) {
-	// 共享密钥（与Python代码相同）
-	sharedKeyBase64 := "awwYDrn0ojn2p7y2hNL/kg=="
-	key, err := base64.StdEncoding.DecodeString(sharedKeyBase64)
-	if err != nil {
-		return "", err
-	}
-
-	// 将十六进制字符串转换为字节数组
-	encryptedBytes, err := hex.DecodeString(encryptedData)
-	if err != nil {
-		return "", err
-	}
-
-	// 检查数据长度
-	if len(encryptedBytes) < 12+16 { // IV (12) + 至少1字节密文 + 标签(16)
-		return "", errors.New("invalid encrypted data length")
-	}
-
-	// 分离IV
-	iv := encryptedBytes[:12]
-
-	// 提取密文和标签
-	ciphertextWithTag := encryptedBytes[12:]
-	tag := ciphertextWithTag[len(ciphertextWithTag)-16:]
-	ciphertext := ciphertextWithTag[:len(ciphertextWithTag)-16]
-
-	// 初始化AES-GCM
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-
-	// 解密
-	plaintext, err := gcm.Open(nil, iv, ciphertext, tag)
-	if err != nil {
-		return "", err
-	}
-
-	return string(plaintext), nil
-}
-
 // ReportHandler 报告管理处理器
 type ReportHandler struct {
 	reportService reportService
+	aesUtils      *security.AESUtils
 }
 
 type reportService interface {
@@ -78,16 +28,18 @@ type reportService interface {
 }
 
 // NewReportHandler 创建报告处理器
-func NewReportHandler(reportService *report.ReportService) *ReportHandler {
+func NewReportHandler(reportService *report.ReportService, aesUtils *security.AESUtils) *ReportHandler {
 	return &ReportHandler{
 		reportService: reportService,
+		aesUtils:      aesUtils,
 	}
 }
 
 // NewReportHandlerWithService 用于测试和自定义实现注入。
-func NewReportHandlerWithService(reportService reportService) *ReportHandler {
+func NewReportHandlerWithService(reportService reportService, aesUtils *security.AESUtils) *ReportHandler {
 	return &ReportHandler{
 		reportService: reportService,
+		aesUtils:      aesUtils,
 	}
 }
 
@@ -102,10 +54,10 @@ func (h *ReportHandler) SetupRoutes(engine *gin.Engine, public *gin.RouterGroup,
 	// 报告管理
 	reports := protected.Group("/reports")
 	{
-		reports.GET("/today", h.getTodayReports)
-		reports.GET("/stats", h.getReportStats)
-		reports.GET("", h.listAdReports)
-		reports.POST("/batch", h.batchCreateAdReports)
+		reports.GET("/today", middleware.RBACMiddleware("report:read"), h.getTodayReports)
+		reports.GET("/stats", middleware.RBACMiddleware("report:read"), h.getReportStats)
+		reports.GET("", middleware.RBACMiddleware("report:read"), h.listAdReports)
+		reports.POST("/batch", middleware.RBACMiddleware("report:create"), h.batchCreateAdReports)
 	}
 }
 
@@ -265,7 +217,11 @@ func (h *ReportHandler) upWebTask(c *gin.Context) {
 	}
 
 	// 解密数据
-	decryptedData, err := decryptAES(encryptedReq.Data)
+	if h.aesUtils == nil {
+		response.InternalServerError(c, response.MsgFailedDecryptData)
+		return
+	}
+	decryptedData, err := h.aesUtils.Decrypt(encryptedReq.Data)
 	if err != nil {
 		response.BadRequest(c, response.MsgFailedDecryptData)
 		return

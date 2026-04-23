@@ -143,6 +143,11 @@ func (s *ReportService) processBatch() {
 
 // batchInsert 批量插入数据
 func (s *ReportService) batchInsert() {
+	// 批量插入（在锁外执行）
+	if s.db == nil || s.db.DB == nil {
+		reportLogger.Warn("Skip batch insert: database is not initialized")
+		return
+	}
 	s.batchMutex.Lock()
 	// 检查批次是否为空
 	if len(s.batch) == 0 {
@@ -158,14 +163,12 @@ func (s *ReportService) batchInsert() {
 	s.batch = make([]AdReport, 0, s.batchSize)
 	s.batchMutex.Unlock()
 
-	// 批量插入（在锁外执行）
-	if s.db == nil || s.db.DB == nil {
-		reportLogger.Warn("Skip batch insert: database is not initialized")
-		return
-	}
 	err := s.db.DB.Create(&batchCopy).Error
 	if err != nil {
 		reportLogger.Error("Failed to batch insert: %v", err)
+		s.batchMutex.Lock()
+		s.batch = append(batchCopy, s.batch...)
+		s.batchMutex.Unlock()
 		return
 	}
 

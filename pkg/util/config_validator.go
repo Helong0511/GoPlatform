@@ -103,6 +103,10 @@ func (c *Config) ValidateConfig() error {
 // SetDefaults 设置默认值
 func (c *Config) SetDefaults() {
 	// 默认值设置
+	if c.Environment == "" {
+		c.Environment = "development"
+	}
+
 	if c.Server.Host == "" {
 		c.Server.Host = "0.0.0.0"
 	}
@@ -172,4 +176,6 @@ func (c *Config) SetDefaults() {
 	if c.JWT.ExpiresIn == "" {
 		c.JWT.ExpiresIn = "1h"
 	}
+
+	// 公开注册默认值由 PublicRegisterEnabled() 按环境动态决定。
 }

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Space, Spin, Card, Row, Col, Statistic, DatePicker, InputNumber, Switch, Descriptions, Checkbox, Menu, Dropdown } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, message, Space, Spin, Card, Row, Col, Statistic, DatePicker, InputNumber, Switch, Descriptions, Checkbox, Menu, Dropdown, Tooltip } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, RiseOutlined, BarChartOutlined, CheckCircleOutlined, ClockCircleOutlined, InboxOutlined, EyeOutlined, SettingOutlined } from '@ant-design/icons';
 import { getAdReports, batchCreateAdReports, getReportStats } from '../api';
+import usePermission from '../hooks/usePermission';
 import { toUTC, toUserTimezone } from '../utils/datetime';
 
 const { RangePicker } = DatePicker;
@@ -11,6 +12,7 @@ const { RangePicker } = DatePicker;
  * 用于管理广告上报数据和任务
  */
 function AdReportManagement() {
+  const { hasPermission } = usePermission();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -398,12 +400,20 @@ function AdReportManagement() {
             </Button>
           </Dropdown>
           <Space>
-            <Button 
-              icon={<InboxOutlined />} 
-              onClick={() => setBatchModalVisible(true)}
-            >
-              批量添加
-            </Button>
+            {hasPermission('report:create') ? (
+              <Button
+                icon={<InboxOutlined />}
+                onClick={() => setBatchModalVisible(true)}
+              >
+                批量添加
+              </Button>
+            ) : (
+              <Tooltip title="缺少 report:create 权限，无法批量补录上报数据">
+                <Button icon={<InboxOutlined />} disabled>
+                  批量添加
+                </Button>
+              </Tooltip>
+            )}
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
               添加上报
             </Button>

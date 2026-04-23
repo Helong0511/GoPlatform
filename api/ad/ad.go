@@ -9,6 +9,7 @@ import (
 	ad "ad-platform/internal/ad"
 	"ad-platform/internal/common"
 	"ad-platform/internal/security"
+	"ad-platform/pkg/middleware"
 	"ad-platform/pkg/response"
 	"ad-platform/pkg/util"
 
@@ -37,12 +38,12 @@ func (h *AdHandler) SetupRoutes(engine *gin.Engine, public *gin.RouterGroup, pro
 	// 广告管理
 	ads := protected.Group("/ads")
 	{
-		ads.GET("", h.listAdTasks)
-		ads.GET("/active", h.listActiveAdTasks)
-		ads.GET("/:id", h.getAdTask)
-		ads.POST("", h.createAdTask)
-		ads.PUT("/:id", h.updateAdTask)
-		ads.DELETE("/:id", h.deleteAdTask)
+		ads.GET("", middleware.RBACMiddleware("ad:read"), h.listAdTasks)
+		ads.GET("/active", middleware.RBACMiddleware("ad:read"), h.listActiveAdTasks)
+		ads.GET("/:id", middleware.RBACMiddleware("ad:read"), h.getAdTask)
+		ads.POST("", middleware.RBACMiddleware("ad:create"), h.createAdTask)
+		ads.PUT("/:id", middleware.RBACMiddleware("ad:update"), h.updateAdTask)
+		ads.DELETE("/:id", middleware.RBACMiddleware("ad:delete"), h.deleteAdTask)
 	}
 }
 
