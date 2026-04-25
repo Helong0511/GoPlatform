@@ -3,6 +3,26 @@
 本文档为 GoPlatform **单服务标准版**部署指南。  
 平台入口仅 `ad-platform-main`，不再包含独立任务服务或独立上报服务。
 
+## 目录索引
+
+- [1. 架构与端口](#1-架构与端口)
+- [2. 服务器准备](#2-服务器准备)
+- [3. 拉取代码与依赖](#3-拉取代码与依赖)
+- [4. 配置文件](#4-配置文件)
+- [5. 初始化数据库（按驱动选择）](#5-初始化数据库按驱动选择)
+- [6. 编译](#6-编译)
+- [7. systemd 服务](#7-systemd-服务)
+- [8. Nginx 配置](#8-nginx-配置)
+- [9. 防火墙（按需）](#9-防火墙按需)
+- [10. 验证](#10-验证)
+- [11. 常用运维](#11-常用运维)
+- [12. 更新流程（标准）](#12-更新流程标准)
+- [13. 回滚](#13-回滚)
+- [14. 日志与数据备份/销毁（生产必做）](#14-日志与数据备份销毁生产必做)
+- [15. 服务器规格建议（按部署形态）](#15-服务器规格建议按部署形态)
+- [16. 2核2G 专用推荐参数（轻量化）](#16-2核2g-专用推荐参数轻量化)
+- [17. 上线前/后超级详细检查清单（建议打印执行）](#17-上线前后超级详细检查清单建议打印执行)
+
 ## 1. 架构与端口
 
 - 主服务：`ad-platform-main`（`8960`）
@@ -309,6 +329,246 @@ curl http://127.0.0.1:8960/health
 ```
 
 ## 13. 回滚
+
+```bash
+sudo systemctl stop ad-platform-main
+sudo cp /data/GoPlatform/ad-platform-main.backup /data/GoPlatform/ad-platform-main
+sudo chmod +x /data/GoPlatform/ad-platform-main
+sudo systemctl start ad-platform-main
+```
+
+## 14. 日志与数据备份/销毁（生产必做）
+
+### 14.1 journald 日志保留策略（避免磁盘被日志打满）
+
+编辑 `/etc/systemd/journald.conf`：
+
+```ini
+[Journal]
+SystemMaxUse=1G
+RuntimeMaxUse=256M
+MaxRetentionSec=7day
+Compress=yes
+```
+
+应用配置：
+
+```bash
+sudo systemctl restart systemd-journald
+sudo journalctl --vacuum-time=7d
+```
+
+### 14.2 数据库备份脚本（仓库内可直接用）
+
+- PostgreSQL 备份：`scripts/backup_postgres.sh`
+- PostgreSQL 恢复：`scripts/restore_postgres.sh`
+- MySQL 备份：`scripts/backup_mysql.sh`
+- MySQL 恢复：`scripts/restore_mysql.sh`
+
+首次部署请赋予执行权限：
+
+```bash
+cd /data/GoPlatform
+chmod +x scripts/backup_postgres.sh scripts/restore_postgres.sh scripts/backup_mysql.sh scripts/restore_mysql.sh
+```
+
+PostgreSQL 备份示例：
+
+```bash
+export PGPASSWORD='__REPLACE_ME__'
+BACKUP_DIR=/data/backups/postgres DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_NAME=ad_platform RETENTION_DAYS=7 \
+  /data/GoPlatform/scripts/backup_postgres.sh
+```
+
+MySQL 备份示例：
+
+```bash
+export MYSQL_PWD='__REPLACE_ME__'
+BACKUP_DIR=/data/backups/mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=root DB_NAME=ad_platform RETENTION_DAYS=7 \
+  /data/GoPlatform/scripts/backup_mysql.sh
+```
+
+恢复示例（执行前请确认环境）：
+
+```bash
+# PostgreSQL
+export PGPASSWORD='__REPLACE_ME__'
+DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_NAME=ad_platform \
+  /data/GoPlatform/scripts/restore_postgres.sh /data/backups/postgres/ad_platform_full_YYYYMMDD_HHMMSS.sql.gz
+
+# MySQL
+export MYSQL_PWD='__REPLACE_ME__'
+DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=root DB_NAME=ad_platform \
+  /data/GoPlatform/scripts/restore_mysql.sh /data/backups/mysql/ad_platform_full_YYYYMMDD_HHMMSS.sql.gz
+```
+
+### 14.3 PostgreSQL 上报分区清理（数据销毁）
+
+初始化清理函数：
+
+```bash
+psql -U postgres -d ad_platform -f /data/GoPlatform/sql/cleanup_old_postgres_partitions.sql
+```
+
+预览将删除的分区（不执行删除）：
+
+```sql
+SELECT * FROM cleanup_old_ad_reports_partitions(180, true);
+```
+
+执行删除（保留最近 180 天）：
+
+```sql
+SELECT * FROM cleanup_old_ad_reports_partitions(180, false);
+```
+
+### 14.4 定时任务（cron 示例）
+
+```bash
+crontab -e
+```
+
+按数据库类型选择以下任务：
+
+```cron
+# 每天 02:30 PostgreSQL 全量+结构备份，保留 7 天
+30 2 * * * PGPASSWORD=__REPLACE_ME__ BACKUP_DIR=/data/backups/postgres DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_NAME=ad_platform RETENTION_DAYS=7 /data/GoPlatform/scripts/backup_postgres.sh >> /var/log/ad-platform-backup.log 2>&1
+
+# 每天 02:30 MySQL 全量+结构备份，保留 7 天
+30 2 * * * MYSQL_PWD=__REPLACE_ME__ BACKUP_DIR=/data/backups/mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=root DB_NAME=ad_platform RETENTION_DAYS=7 /data/GoPlatform/scripts/backup_mysql.sh >> /var/log/ad-platform-backup.log 2>&1
+
+# 每天 03:10 预览待清理分区（PostgreSQL）
+10 3 * * * psql -U postgres -d ad_platform -c "SELECT * FROM cleanup_old_ad_reports_partitions(180, true);" >> /var/log/ad-platform-partition-cleanup.log 2>&1
+
+# 每周日 03:20 执行分区清理（PostgreSQL）
+20 3 * * 0 psql -U postgres -d ad_platform -c "SELECT * FROM cleanup_old_ad_reports_partitions(180, false);" >> /var/log/ad-platform-partition-cleanup.log 2>&1
+```
+
+### 14.5 恢复演练建议
+
+- 至少每月一次在测试环境做恢复演练（从备份文件恢复并验证关键接口）。
+- 演练后记录：恢复耗时、是否成功、失败原因、改进项。
+- 生产变更前，先确认最近 24 小时备份文件存在且可解压读取。
+
+## 15. 服务器规格建议（按部署形态）
+
+### 15.1 仅部署主服务（数据库/中间件外置）
+
+- 最低可用：`2核 2G内存 40G SSD`（低流量）
+- 推荐起步：`2核 4G内存 80G SSD`
+- 适用场景：内网系统、验证环境、小规模生产
+
+### 15.2 全部同机部署（主服务+数据库+Redis+Pulsar+Nginx+Prometheus）
+
+- 最低可用（仅测试/低流量）：`4核 8G内存 100G SSD`
+- 推荐生产起步：`8核 16G内存 200G SSD`
+- 有增长预期：`8核 32G内存 300G SSD`
+
+说明：
+
+- `2核2G` 不建议同机部署全家桶，容易出现 OOM、超时、频繁重启。
+- 若必须小规格上线，优先外置数据库与消息组件（Pulsar）。
+- 强烈建议启用 swap（至少 1G，建议 2G）。
+
+## 16. 2核2G 专用推荐参数（轻量化）
+
+适用于“主服务部署在 2核2G，数据库尽量外置”的场景。
+
+### 16.1 `ad-platform-main.service` 推荐
+
+保留以下关键项：
+
+```ini
+Environment="GOMAXPROCS=1"
+Environment="GOGC=100"
+Environment="GODEBUG=madvdontneed=1"
+Restart=always
+RestartSec=5
+```
+
+### 16.2 `config/config.yaml` 推荐
+
+数据库连接池：
+
+```yaml
+database:
+  max_open_conns: 8
+  max_idle_conns: 4
+  conn_max_lifetime: 20m
+  conn_max_idle_time: 5m
+```
+
+Redis 连接池：
+
+```yaml
+redis:
+  pool_size: 20
+  min_idle_conns: 5
+  dial_timeout: 2s
+  read_timeout: 1s
+  write_timeout: 1s
+  idle_timeout: 3m
+  max_retries: 2
+  min_retry_backoff: 100ms
+  max_retry_backoff: 500ms
+```
+
+限流建议：
+
+```yaml
+rate_limit:
+  requests_per_second: 20
+  burst: 80
+```
+
+### 16.3 资源告警阈值建议
+
+- 可用内存持续 `< 200MB`：立即降限流并排查
+- CPU 持续 `> 80%` 超过 10 分钟：降并发或升配
+- 日志出现 OOM / timeout：优先降低连接池与 QPS
+
+## 17. 上线前/后超级详细检查清单（建议打印执行）
+
+### 17.1 上线前检查（Pre-Flight）
+
+- [ ] `DB_DRIVER` 与数据库类型一致（mysql/postgres）
+- [ ] `DB_PORT` 与驱动一致（3306/5432）
+- [ ] 初始化脚本与驱动一致：
+  - MySQL：`sql/init_db_mysql.sql`
+  - PostgreSQL：`sql/init_db_PostgreSQL.sql`
+- [ ] `JWT_SECRET` / `AES_SECRET_KEY` 已替换强随机值
+- [ ] `AUTH_ALLOW_PUBLIC_REGISTER=false`
+- [ ] `pwsh ./scripts/check-secrets.ps1` 扫描通过
+- [ ] 备份脚本可执行且手工执行一次成功
+- [ ] 最近 24 小时备份文件存在且可解压
+
+### 17.2 上线执行检查
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart ad-platform-main
+sudo systemctl status ad-platform-main --no-pager
+curl -f http://127.0.0.1:8960/health
+sudo journalctl -u ad-platform-main -n 200 --no-pager
+```
+
+### 17.3 上线后 30 分钟观察
+
+- [ ] `/health` 连续可用
+- [ ] 无持续数据库连接错误
+- [ ] 无 OOM / 频繁重启
+- [ ] 内存、CPU、磁盘在可控范围
+- [ ] 业务核心接口抽样通过
+
+### 17.4 回退触发条件（建议）
+
+满足任一条件建议立即回退：
+
+- 服务 10 分钟内连续重启 3 次以上
+- 核心接口持续不可用超过 5 分钟
+- 数据库连接持续异常且 15 分钟内无法恢复
+
+执行回退：
 
 ```bash
 sudo systemctl stop ad-platform-main
