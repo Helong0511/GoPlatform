@@ -20,7 +20,14 @@ email:
 
 # 数据库连接池配置
 # 适用于4核CPU，16GB内存服务器的高并发配置
+# driver:
+#   - postgres: 使用 sql/init_db.sql
+#   - mysql:    使用 sql/init_db_mysql.sql
+# 注意：
+#   1) 切换 driver 后，请确保 DB_PORT 与数据库实际端口一致（PostgreSQL 通常 5432，MySQL 通常 3306）
+#   2) cluster 节点建议显式补齐 driver，避免多节点混用时歧义
 database:
+  driver: postgres # postgres | mysql
   host: localhost
   port: 5432
   user: postgres

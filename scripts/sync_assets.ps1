@@ -6,7 +6,8 @@ $mappings = @(
     @{ Source = Join-Path $repoRoot "ubuntu\nginx\nginx.conf"; Target = Join-Path $PSScriptRoot "nginx.conf" },
     @{ Source = Join-Path $repoRoot "ubuntu\postgresql\postgresql.conf"; Target = Join-Path $PSScriptRoot "postgresql.conf" },
     @{ Source = Join-Path $repoRoot "ubuntu\service\ad-platform-main.service"; Target = Join-Path $PSScriptRoot "ad-platform-main.service" },
-    @{ Source = Join-Path $repoRoot "sql\init_db.sql"; Target = Join-Path $PSScriptRoot "init_db.sql" }
+    @{ Source = Join-Path $repoRoot "sql\init_db_PostgreSQL.sql"; Target = Join-Path $PSScriptRoot "init_db_PostgreSQL.sql" },
+    @{ Source = Join-Path $repoRoot "sql\init_db_mysql.sql"; Target = Join-Path $PSScriptRoot "init_db_mysql.sql" }
 )
 
 foreach ($item in $mappings) {

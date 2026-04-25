@@ -3,10 +3,12 @@ package db
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"ad-platform/pkg/util"
 
+	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -23,12 +25,6 @@ func NewPostgresDB(config *util.DatabaseConfig) (*PostgresDB, error) {
 	if config == nil {
 		return nil, fmt.Errorf("database config is nil")
 	}
-
-	// 构建 DSN
-	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode,
-	)
 
 	// 解析连接池配置
 	maxOpenConns := config.MaxOpenConns
@@ -52,8 +48,13 @@ func NewPostgresDB(config *util.DatabaseConfig) (*PostgresDB, error) {
 		},
 	}
 
+	dbDialector, err := buildDialector(config)
+	if err != nil {
+		return nil, err
+	}
+
 	// 连接数据库
-	db, err := gorm.Open(postgres.Open(dsn), gormConfig)
+	db, err := gorm.Open(dbDialector, gormConfig)
 	if err != nil {
 		// 数据库连接失败，返回错误
 		log.Printf("Error: Failed to connect to database: %v", err)
@@ -97,11 +98,6 @@ func NewPostgresDBCluster(configs []*util.DatabaseConfig) (*PostgresDB, error) {
 			continue
 		}
 
-		dsn := fmt.Sprintf(
-			"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-			config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode,
-		)
-
 		gormConfig := &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Info),
 			NowFunc: func() time.Time {
@@ -109,7 +105,13 @@ func NewPostgresDBCluster(configs []*util.DatabaseConfig) (*PostgresDB, error) {
 			},
 		}
 
-		db, err := gorm.Open(postgres.Open(dsn), gormConfig)
+		dbDialector, err := buildDialector(config)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		db, err := gorm.Open(dbDialector, gormConfig)
 		if err == nil {
 			// 连接成功，使用该节点
 			// 配置连接池
@@ -139,6 +141,31 @@ func NewPostgresDBCluster(configs []*util.DatabaseConfig) (*PostgresDB, error) {
 	}
 
 	return nil, fmt.Errorf("failed to connect to any database node: %w", lastErr)
+}
+
+func buildDialector(config *util.DatabaseConfig) (gorm.Dialector, error) {
+	driver := strings.ToLower(strings.TrimSpace(config.Driver))
+	if driver == "" {
+		driver = "postgres"
+	}
+
+	switch driver {
+	case "postgres":
+		dsn := fmt.Sprintf(
+			"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode,
+		)
+		return postgres.Open(dsn), nil
+	case "mysql":
+		// parseTime=true 确保 time.Time 正确解析；utf8mb4 兼容 emoji。
+		dsn := fmt.Sprintf(
+			"%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+			config.User, config.Password, config.Host, config.Port, config.DBName,
+		)
+		return mysql.Open(dsn), nil
+	default:
+		return nil, fmt.Errorf("unsupported database driver: %s", config.Driver)
+	}
 }
 
 // Close 关闭数据库连接

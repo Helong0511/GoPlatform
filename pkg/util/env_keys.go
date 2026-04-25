@@ -7,6 +7,7 @@ import (
 
 const (
 	EnvDBHost        = "DB_HOST"
+	EnvDBDriver      = "DB_DRIVER"
 	EnvDBPort        = "DB_PORT"
 	EnvDBUser        = "DB_USER"
 	EnvDBPassword    = "DB_PASSWORD"

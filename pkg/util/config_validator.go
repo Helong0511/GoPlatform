@@ -14,6 +14,10 @@ func (c *Config) ValidateConfig() error {
 	}
 
 	// 验证数据库配置
+	if c.Database.Driver != "postgres" && c.Database.Driver != "mysql" {
+		return fmt.Errorf("invalid database driver: %s, must be postgres or mysql", c.Database.Driver)
+	}
+
 	if c.Database.Host == "" {
 		return fmt.Errorf("database host cannot be empty")
 	}
@@ -139,6 +143,10 @@ func (c *Config) SetDefaults() {
 
 	if c.Database.SSLMode == "" {
 		c.Database.SSLMode = "disable"
+	}
+
+	if c.Database.Driver == "" {
+		c.Database.Driver = "postgres"
 	}
 
 	if c.Database.MaxOpenConns == 0 {

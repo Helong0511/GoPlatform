@@ -16,6 +16,7 @@ Restart=on-failure
 RestartSec=10
 Environment="ENVIRONMENT=production"
 Environment="AUTH_ALLOW_PUBLIC_REGISTER=false"
+Environment="DB_DRIVER=postgres"
 Environment="DB_HOST=localhost"
 Environment="DB_PORT=5432"
 Environment="DB_USER=postgres"
@@ -59,6 +60,13 @@ go mod tidy
 go build -o ad-platform-main ./cmd/main.go
 sudo systemctl restart ad-platform-main
 
+5.1) 初始化数据库（按 DB_DRIVER 选择）
+# PostgreSQL:
+psql -U postgres -d ad_platform -f /data/GoPlatform/sql/init_db_PostgreSQL.sql
+# MySQL8.0:
+mysql -uroot -p -e "CREATE DATABASE IF NOT EXISTS ad_platform CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -uroot -p ad_platform < /data/GoPlatform/sql/init_db_mysql.sql
+
 6) 日志排查
 sudo journalctl -u ad-platform-main -n 100 --no-pager
 sudo journalctl -u ad-platform-main -f
@@ -72,5 +80,5 @@ sudo systemctl disable ad-platform-main
 8) 发布前密钥扫描（在仓库根目录执行）
 pwsh ./scripts/check-secrets.ps1
 
-9) 已有数据库补权限（如库早于 report:create 权限）
-psql -U postgres -d ad_platform -f /data/GoPlatform/sql/patch_add_report_create_permission.sql
+9) 权限初始化说明
+`sql/init_db_PostgreSQL.sql` 与 `sql/init_db_mysql.sql` 已包含 report:create 权限初始化，无需再执行旧补丁脚本。

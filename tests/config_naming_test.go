@@ -18,6 +18,7 @@ server:
   port: 8080
   timeout: 15s
 database:
+  driver: mysql
   host: localhost
   port: 5432
   user: test_user
@@ -81,6 +82,9 @@ rate_limit:
 
 	if cfg.Server.Port != 8080 {
 		t.Fatalf("expected main server port to be parsed, got main=%d", cfg.Server.Port)
+	}
+	if cfg.Database.Driver != "mysql" {
+		t.Fatalf("expected database driver mysql, got %s", cfg.Database.Driver)
 	}
 	if len(cfg.Redis.Cluster) != 1 {
 		t.Fatalf("expected redis cluster to be parsed, got %d", len(cfg.Redis.Cluster))

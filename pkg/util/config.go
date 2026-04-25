@@ -50,6 +50,7 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
+	Driver          string           `yaml:"driver"`
 	Host            string           `yaml:"host"`
 	Port            int              `yaml:"port"`
 	User            string           `yaml:"user"`
@@ -135,6 +136,12 @@ func LoadConfig(filePath string) (*Config, error) {
 		// 同时更新集群配置
 		for i := range config.Database.Cluster {
 			config.Database.Cluster[i].Host = envDBHost
+		}
+	}
+	if envDBDriver := GetEnvTrim(EnvDBDriver); envDBDriver != "" {
+		config.Database.Driver = strings.ToLower(envDBDriver)
+		for i := range config.Database.Cluster {
+			config.Database.Cluster[i].Driver = strings.ToLower(envDBDriver)
 		}
 	}
 	if envDBPort := GetEnvTrim(EnvDBPort); envDBPort != "" {
