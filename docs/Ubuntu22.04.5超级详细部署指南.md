@@ -141,6 +141,12 @@ sudo ss -tulpn | grep -E '8960|5432|6379|6650|80|443|9090'
 pwsh ./scripts/check-secrets.ps1
 ```
 
+已有数据库升级权限补丁（如数据库早于 `report:create` 权限存在）：
+
+```bash
+psql -U postgres -d ad_platform -f /data/GoPlatform/sql/patch_add_report_create_permission.sql
+```
+
 ## 10. 常用运维
 
 ```bash

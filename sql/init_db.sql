@@ -1,12 +1,11 @@
 -- 初始化 ad_platform 数据库
 -- 执行说明：
--- 1. 直接运行 run_init_db.bat 批处理文件
--- 2. 或手动执行以下步骤：
+-- 1. 使用 psql 手动执行以下步骤：
 --    a. 连接到 postgres 数据库：psql -U postgres
 --    b. 删除已存在的数据库：DROP DATABASE IF EXISTS ad_platform;
 --    c. 创建新数据库：CREATE DATABASE ad_platform;
 --    d. 连接到新数据库：\c ad_platform;
---    e. 执行此脚本：\i e:\GoPlatform\scripts\init_db.sql
+--    e. 执行此脚本：\i e:\GoPlatform\sql\init_db.sql
 -- 注意：每次执行此脚本都会重建整个数据库，确保所有表和数据都是全新的
 -- 这样可以保证 ID 是连续的，因为序列会从 1 开始
 -- 如果直接在已存在的数据库中执行此脚本，先删除所有表

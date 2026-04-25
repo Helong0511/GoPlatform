@@ -71,3 +71,6 @@ sudo systemctl disable ad-platform-main
 
 8) 发布前密钥扫描（在仓库根目录执行）
 pwsh ./scripts/check-secrets.ps1
+
+9) 已有数据库补权限（如库早于 report:create 权限）
+psql -U postgres -d ad_platform -f /data/GoPlatform/sql/patch_add_report_create_permission.sql
