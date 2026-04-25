@@ -135,6 +135,12 @@ curl http://127.0.0.1:8960/health
 sudo ss -tulpn | grep -E '8960|5432|6379|6650|80|443|9090'
 ```
 
+密钥提交前扫描（建议每次发布前执行）：
+
+```powershell
+pwsh ./scripts/check-secrets.ps1
+```
+
 ## 10. 常用运维
 
 ```bash

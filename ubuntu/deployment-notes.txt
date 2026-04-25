@@ -68,3 +68,6 @@ sudo systemctl stop ad-platform-main
 sudo systemctl start ad-platform-main
 sudo systemctl restart ad-platform-main
 sudo systemctl disable ad-platform-main
+
+8) 发布前密钥扫描（在仓库根目录执行）
+pwsh ./scripts/check-secrets.ps1
