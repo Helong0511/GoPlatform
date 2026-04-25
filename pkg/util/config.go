@@ -13,6 +13,7 @@ type Config struct {
 	Environment string          `yaml:"environment"`
 	Server      ServerConfig    `yaml:"server"`
 	Auth        AuthConfig      `yaml:"auth"`
+	Email       EmailConfig     `yaml:"email"`
 	Database    DatabaseConfig  `yaml:"database"`
 	Redis       RedisConfig     `yaml:"redis"`
 	Pulsar      PulsarConfig    `yaml:"pulsar"`
@@ -31,6 +32,15 @@ type AuthConfig struct {
 	// - false: 强制关闭公开注册
 	// - nil: 按环境默认（development/local/dev 默认开启，其他默认关闭）
 	AllowPublicRegister *bool `yaml:"allow_public_register"`
+}
+
+type EmailConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	From     string `yaml:"from"`
 }
 
 type ServerConfig struct {
@@ -172,6 +182,26 @@ func LoadConfig(filePath string) (*Config, error) {
 	if v := GetEnvTrim(EnvAuthAllowPublicRegister); v != "" {
 		envAllow := parseEnvBool(v)
 		config.Auth.AllowPublicRegister = &envAllow
+	}
+	if v := GetEnvTrim(EnvEmailEnabled); v != "" {
+		config.Email.Enabled = parseEnvBool(v)
+	}
+	if v := GetEnvTrim(EnvEmailHost); v != "" {
+		config.Email.Host = v
+	}
+	if v := GetEnvTrim(EnvEmailPort); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			config.Email.Port = p
+		}
+	}
+	if v := GetEnvTrim(EnvEmailUsername); v != "" {
+		config.Email.Username = v
+	}
+	if v := GetEnvTrim(EnvEmailPassword); v != "" {
+		config.Email.Password = v
+	}
+	if v := GetEnvTrim(EnvEmailFrom); v != "" {
+		config.Email.From = v
 	}
 
 	return &config, nil

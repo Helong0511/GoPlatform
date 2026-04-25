@@ -2,6 +2,7 @@ package admin
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"ad-platform/internal/common"
@@ -28,6 +29,25 @@ type User struct {
 	UpdatedAt    time.Time   `json:"updated_at"`
 	Roles        []Role      `json:"roles" gorm:"many2many:user_roles;"`
 	Department   *Department `json:"department,omitempty" gorm:"foreignKey:DepartmentID"`
+}
+
+// GetUserByAPIKey 根据 API Key 获取用户
+func (s *UserService) GetUserByAPIKey(apiKey string) (*User, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return nil, common.ErrUserNotFound
+	}
+	keyHash := hashAPIKey(apiKey)
+
+	var key UserAPIKey
+	if err := s.db.DB.Where("key_hash = ? AND status = ?", keyHash, true).First(&key).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.ErrUserNotFound
+		}
+		return nil, err
+	}
+	_ = s.touchAPIKeyLastUsed(key.ID, "")
+	return s.GetUserByID(key.UserID)
 }
 
 // UserService 用户服务

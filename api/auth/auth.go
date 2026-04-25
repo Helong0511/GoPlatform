@@ -1,10 +1,15 @@
 package auth
 
 import (
+	"fmt"
+	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"ad-platform/internal/admin"
+	"ad-platform/internal/common"
+	"ad-platform/pkg/notify"
 	"ad-platform/pkg/auth"
 	"ad-platform/pkg/response"
 
@@ -17,18 +22,24 @@ type AuthHandler struct {
 	authMiddleware      *auth.AuthMiddleware
 	tokenTTL            time.Duration
 	allowPublicRegister bool
+	emailSender         notify.EmailSender
 }
 
 // NewAuthHandler 创建认证处理器
-func NewAuthHandler(userService *admin.UserService, jwtSecret string, tokenTTL time.Duration, allowPublicRegister bool) *AuthHandler {
+func NewAuthHandler(userService *admin.UserService, jwtSecret string, tokenTTL time.Duration, allowPublicRegister bool, emailSender ...notify.EmailSender) *AuthHandler {
 	if tokenTTL <= 0 {
 		tokenTTL = time.Hour
+	}
+	var sender notify.EmailSender
+	if len(emailSender) > 0 {
+		sender = emailSender[0]
 	}
 	return &AuthHandler{
 		userService:         userService,
 		authMiddleware:      auth.NewAuthMiddleware(jwtSecret),
 		tokenTTL:            tokenTTL,
 		allowPublicRegister: allowPublicRegister,
+		emailSender:         sender,
 	}
 }
 
@@ -69,7 +80,7 @@ func (h *AuthHandler) login(c *gin.Context) {
 
 	// 检查用户状态
 	if !user.Status {
-		response.Forbidden(c, response.MsgUserDisabled)
+		response.Forbidden(c, response.MsgUserLockedCannotLogin)
 		return
 	}
 
@@ -124,7 +135,6 @@ func (h *AuthHandler) register(c *gin.Context) {
 
 	var req struct {
 		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required,min=6"`
 		Email    string `json:"email" binding:"required,email"`
 	}
 
@@ -133,18 +143,28 @@ func (h *AuthHandler) register(c *gin.Context) {
 		return
 	}
 
-	// 创建用户
-	user := &admin.User{
-		Username: req.Username,
-		Password: req.Password,
-		Email:    req.Email,
-		Status:   true,
-	}
-
-	if err := h.userService.CreateUser(user); err != nil {
+	reg, err := h.userService.CreateRegistration(req.Username, req.Email)
+	if err != nil {
+		if common.IsDuplicateEntryError(err) {
+			response.Error(c, response.CodeDuplicateEntry, response.MsgRegistrationAlreadyExists)
+			return
+		}
 		response.InternalServerError(c, response.MsgFailedCreateUser)
 		return
 	}
 
-	response.Created(c, response.MsgUserCreatedSuccessfully, user)
+	if h.emailSender != nil {
+		subject := "注册申请已提交"
+		body := fmt.Sprintf("您好，%s：\n\n您的注册申请已提交，等待管理员审核。\n账号：%s\n邮箱：%s\n\n审核通过后系统会发送初始密码与API Key。", strings.TrimSpace(req.Username), strings.TrimSpace(req.Username), strings.TrimSpace(req.Email))
+		if sendErr := h.emailSender.Send(req.Email, subject, body); sendErr != nil {
+			log.Printf("warning: failed to send registration submitted email to %s: %v", req.Email, sendErr)
+		}
+	}
+
+	response.Created(c, response.MsgRegistrationSubmitted, gin.H{
+		"id":       reg.ID,
+		"username": reg.Username,
+		"email":    reg.Email,
+		"status":   reg.Status,
+	})
 }

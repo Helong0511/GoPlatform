@@ -45,6 +45,8 @@ StartLimitBurst=10
 
 # 运行环境：生产环境
 Environment="ENVIRONMENT=production"
+# 公开注册开关：生产环境建议关闭（false）
+Environment="AUTH_ALLOW_PUBLIC_REGISTER=false"
 
 # Go最大CPU核心数：1核（主服务资源适中，在4核服务器中分配25%CPU）
 Environment="GOMAXPROCS=1"
@@ -61,18 +63,18 @@ Environment="GODEBUG=madvdontneed=1"
 # 内存分配器配置：优化内存回收延迟
 Environment="MALLOC_CONF=dirty_decay_ms:30000,muzzy_decay_ms:30000"
 
-# 数据库连接配置
+# 数据库连接配置（请替换为真实值）
 Environment="DB_HOST=localhost"
 Environment="DB_PORT=5432"
 Environment="DB_USER=postgres"
-Environment="DB_PASSWORD=kb7$rL3d8!tQ"
+Environment="DB_PASSWORD=__REPLACE_ME__"
 Environment="DB_NAME=ad_platform"
 
-# JWT密钥配置
-Environment="JWT_SECRET=NeofZ7iF8tNW6GzkyMZfsGmitY6r6Gwn6D5BU433Vu9lkFwciS2PApBkPMurQuexc9ZgWUjxQA6ZBHMx_bdvHQ"
+# JWT密钥配置（请替换为高强度随机值）
+Environment="JWT_SECRET=__REPLACE_ME__"
 
-# AES密钥配置
-Environment="AES_SECRET_KEY=awwYDrn0ojn2p7y2hNL/kg=="
+# AES密钥配置（Base64编码密钥，请替换）
+Environment="AES_SECRET_KEY=__REPLACE_ME__"
 
 # ===============================================
 # 资源限制配置

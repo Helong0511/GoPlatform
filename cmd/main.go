@@ -18,6 +18,7 @@ import (
 	"ad-platform/pkg/db"
 	"ad-platform/pkg/metrics"
 	"ad-platform/pkg/middleware"
+	"ad-platform/pkg/notify"
 	"ad-platform/pkg/pulsar"
 	"ad-platform/pkg/redis"
 	"ad-platform/pkg/util"
@@ -128,6 +129,14 @@ func main() {
 		log.Fatalf("Invalid JWT expires_in: %v", err)
 	}
 
+	var emailSender notify.EmailSender
+	if config.Email.Enabled {
+		emailSender = notify.NewSMTPEmailSender(config.Email)
+		log.Printf("Email sender enabled: %s:%d", config.Email.Host, config.Email.Port)
+	} else {
+		log.Printf("Email sender disabled")
+	}
+
 	serverTimeout, err := time.ParseDuration(config.Server.Timeout)
 	if err != nil {
 		log.Printf("Warning: invalid server timeout, fallback to 30s: %v", err)
@@ -147,6 +156,7 @@ func main() {
 		jwtExpiresIn,
 		config.PublicRegisterEnabled(),
 		aesSecret,
+		emailSender,
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize router: %v", err)
@@ -174,6 +184,11 @@ func main() {
 	log.Println("Enabling rate limit...")
 	engine.Use(rateLimiter.RateLimitMiddleware())
 	log.Println("Rate limit enabled")
+
+	// 启用多语言解析（默认简体中文）
+	log.Println("Enabling locale middleware...")
+	engine.Use(middleware.LocaleMiddleware())
+	log.Println("Locale middleware enabled")
 
 	// 设置路由
 	log.Println("Setting up routes...")

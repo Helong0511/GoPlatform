@@ -1,10 +1,12 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"ad-platform/internal/common"
 	"ad-platform/internal/admin"
 	"ad-platform/pkg/auth"
 	"ad-platform/pkg/response"
@@ -79,7 +81,7 @@ func UserContextMiddleware(userService *admin.UserService) gin.HandlerFunc {
 		}
 
 		if !user.Status {
-			response.Forbidden(c, response.MsgUserDisabled)
+			response.Forbidden(c, response.MsgUserLockedCannotLogin)
 			c.Abort()
 			return
 		}
@@ -164,6 +166,39 @@ func DepartmentMiddleware() gin.HandlerFunc {
 
 		// 将部门信息存储到上下文中
 		c.Set("department_id", *u.DepartmentID)
+		c.Next()
+	}
+}
+
+// APIKeyMiddleware 通过 X-API-Key 校验下游访问身份
+func APIKeyMiddleware(userService *admin.UserService, requiredScope string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		apiKey := strings.TrimSpace(c.GetHeader("X-API-Key"))
+		if apiKey == "" {
+			response.Unauthorized(c, response.MsgAPIKeyRequired)
+			c.Abort()
+			return
+		}
+
+		user, err := userService.ValidateAPIKey(apiKey, requiredScope, c.ClientIP())
+		if err != nil {
+			if errors.Is(err, common.ErrForbidden) {
+				response.Forbidden(c, response.MsgAPIKeyScopeDenied)
+				c.Abort()
+				return
+			}
+			response.Unauthorized(c, response.MsgInvalidAPIKey)
+			c.Abort()
+			return
+		}
+		if !user.Status {
+			response.Forbidden(c, response.MsgUserLockedCannotLogin)
+			c.Abort()
+			return
+		}
+
+		c.Set("api_user_id", user.ID)
+		c.Set("api_user", user)
 		c.Next()
 	}
 }

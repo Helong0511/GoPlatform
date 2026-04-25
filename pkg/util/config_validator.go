@@ -97,6 +97,24 @@ func (c *Config) ValidateConfig() error {
 		return fmt.Errorf("rate_limit burst must be greater than 0")
 	}
 
+	if c.Email.Enabled {
+		if c.Email.Host == "" {
+			return fmt.Errorf("email host cannot be empty when email is enabled")
+		}
+		if c.Email.Port <= 0 || c.Email.Port > 65535 {
+			return fmt.Errorf("invalid email port: %d, must be between 1 and 65535", c.Email.Port)
+		}
+		if c.Email.Username == "" {
+			return fmt.Errorf("email username cannot be empty when email is enabled")
+		}
+		if c.Email.Password == "" {
+			return fmt.Errorf("email password cannot be empty when email is enabled")
+		}
+		if c.Email.From == "" {
+			return fmt.Errorf("email from cannot be empty when email is enabled")
+		}
+	}
+
 	return nil
 }
 
@@ -175,6 +193,13 @@ func (c *Config) SetDefaults() {
 	// JWT 默认值
 	if c.JWT.ExpiresIn == "" {
 		c.JWT.ExpiresIn = "1h"
+	}
+
+	if c.Email.Port == 0 {
+		c.Email.Port = 587
+	}
+	if c.Email.From == "" && c.Email.Username != "" {
+		c.Email.From = c.Email.Username
 	}
 
 	// 公开注册默认值由 PublicRegisterEnabled() 按环境动态决定。

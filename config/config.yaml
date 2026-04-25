@@ -10,6 +10,14 @@ server:
 auth:
   allow_public_register: false
 
+email:
+  enabled: false
+  host: smtp.gmail.com
+  port: 587
+  username: ""
+  password: ""
+  from: ""
+
 # 数据库连接池配置
 # 适用于4核CPU，16GB内存服务器的高并发配置
 database:

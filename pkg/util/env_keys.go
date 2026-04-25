@@ -17,6 +17,12 @@ const (
 	EnvEnvironment   = "ENVIRONMENT"
 	// EnvAuthAllowPublicRegister 为 "1"/"true"/"yes"/"on" 时开放公开注册
 	EnvAuthAllowPublicRegister = "AUTH_ALLOW_PUBLIC_REGISTER"
+	EnvEmailEnabled            = "EMAIL_ENABLED"
+	EnvEmailHost               = "EMAIL_HOST"
+	EnvEmailPort               = "EMAIL_PORT"
+	EnvEmailUsername           = "EMAIL_USERNAME"
+	EnvEmailPassword           = "EMAIL_PASSWORD"
+	EnvEmailFrom               = "EMAIL_FROM"
 )
 
 // GetEnvTrim 返回去除首尾空白后的环境变量值。

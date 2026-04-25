@@ -44,12 +44,16 @@ func NewReportHandlerWithService(reportService reportService, aesUtils *security
 }
 
 // SetupRoutes 设置报告相关路由
-func (h *ReportHandler) SetupRoutes(engine *gin.Engine, public *gin.RouterGroup, protected *gin.RouterGroup) {
+func (h *ReportHandler) SetupRoutes(engine *gin.Engine, public *gin.RouterGroup, protected *gin.RouterGroup, apiKeyGuard ...gin.HandlerFunc) {
 	// 公开接口
 	public.POST("/report", h.reportAd)
 
 	// 外部接口 - 只支持POST
-	engine.POST("/upWebTask", h.upWebTask)
+	if len(apiKeyGuard) > 0 && apiKeyGuard[0] != nil {
+		engine.POST("/upWebTask", apiKeyGuard[0], h.upWebTask)
+	} else {
+		engine.POST("/upWebTask", h.upWebTask)
+	}
 
 	// 报告管理
 	reports := protected.Group("/reports")

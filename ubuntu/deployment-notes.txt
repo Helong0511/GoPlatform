@@ -15,6 +15,14 @@ ExecStart=/data/GoPlatform/ad-platform-main
 Restart=on-failure
 RestartSec=10
 Environment="ENVIRONMENT=production"
+Environment="AUTH_ALLOW_PUBLIC_REGISTER=false"
+Environment="DB_HOST=localhost"
+Environment="DB_PORT=5432"
+Environment="DB_USER=postgres"
+Environment="DB_PASSWORD=__REPLACE_ME__"
+Environment="DB_NAME=ad_platform"
+Environment="JWT_SECRET=__REPLACE_ME__"
+Environment="AES_SECRET_KEY=__REPLACE_ME__"
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ad-platform-main

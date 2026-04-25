@@ -16,6 +16,7 @@ import (
 	reportInternal "ad-platform/internal/report"
 	"ad-platform/internal/security"
 	"ad-platform/pkg/middleware"
+	"ad-platform/pkg/notify"
 
 	"github.com/gin-gonic/gin"
 )
@@ -32,6 +33,7 @@ type Router struct {
 	jwtExpiresIn        time.Duration
 	allowPublicRegister bool
 	aesUtils            *security.AESUtils
+	emailSender         notify.EmailSender
 }
 
 // NewRouter 创建路由管理器
@@ -46,6 +48,7 @@ func NewRouter(
 	jwtExpiresIn time.Duration,
 	allowPublicRegister bool,
 	aesSecret string,
+	emailSender notify.EmailSender,
 ) (*Router, error) {
 	// 初始化AES工具 - 使用配置的密钥
 	aesUtils, err := security.NewAESUtils(aesSecret)
@@ -64,6 +67,7 @@ func NewRouter(
 		jwtExpiresIn:        jwtExpiresIn,
 		allowPublicRegister: allowPublicRegister,
 		aesUtils:            aesUtils,
+		emailSender:         emailSender,
 	}, nil
 }
 
@@ -71,8 +75,8 @@ func NewRouter(
 func (r *Router) SetupRoutes(engine *gin.Engine) {
 	// 初始化各个模块的处理器
 	systemHandler := system.NewSystemHandler(r.allowPublicRegister)
-	authHandler := auth.NewAuthHandler(r.userService, r.jwtSecret, r.jwtExpiresIn, r.allowPublicRegister)
-	userHandler := user.NewUserHandler(r.userService)
+	authHandler := auth.NewAuthHandler(r.userService, r.jwtSecret, r.jwtExpiresIn, r.allowPublicRegister, r.emailSender)
+	userHandler := user.NewUserHandler(r.userService, r.emailSender)
 	roleHandler := role.NewRoleHandler(r.roleService)
 	departmentHandler := department.NewDepartmentHandler(r.departmentService)
 	clientHandler := client.NewClientHandler(r.userService)
@@ -91,6 +95,7 @@ func (r *Router) SetupRoutes(engine *gin.Engine) {
 	// 设置认证相关路由
 	authHandler.SetupRoutes(public, protected)
 	protected.Use(middleware.UserContextMiddleware(r.userService))
+	systemHandler.SetupAdminRoutes(protected)
 
 	// 设置用户相关路由
 	userHandler.SetupRoutes(protected)
@@ -105,8 +110,10 @@ func (r *Router) SetupRoutes(engine *gin.Engine) {
 	clientHandler.SetupRoutes(protected)
 
 	// 设置广告相关路由
-	adHandler.SetupRoutes(engine, public, protected)
+	taskAPIKeyGuard := middleware.APIKeyMiddleware(r.userService, "task:read")
+	adHandler.SetupRoutes(engine, public, protected, taskAPIKeyGuard)
 
 	// 设置报告相关路由
-	reportHandler.SetupRoutes(engine, public, protected)
+	reportAPIKeyGuard := middleware.APIKeyMiddleware(r.userService, "report:write")
+	reportHandler.SetupRoutes(engine, public, protected, reportAPIKeyGuard)
 }

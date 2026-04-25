@@ -48,6 +48,13 @@ go mod tidy
 - `JWT_SECRET`
 - `AES_SECRET_KEY`
 - `REDIS_PASSWORD`（如有）
+- `ENVIRONMENT`（建议生产环境为 `production`）
+- `AUTH_ALLOW_PUBLIC_REGISTER`（`true/false`，生产建议 `false`）
+
+公开注册开关规则：
+
+- 若显式设置 `AUTH_ALLOW_PUBLIC_REGISTER`，以该值为准
+- 若未设置，则按 `environment` 默认值：`development/dev/local` 默认开启，其它默认关闭
 
 ## 5. 编译
 
@@ -74,6 +81,14 @@ ExecStart=/data/GoPlatform/ad-platform-main
 Restart=on-failure
 RestartSec=10
 Environment="ENVIRONMENT=production"
+Environment="AUTH_ALLOW_PUBLIC_REGISTER=false"
+Environment="DB_HOST=localhost"
+Environment="DB_PORT=5432"
+Environment="DB_USER=postgres"
+Environment="DB_PASSWORD=__REPLACE_ME__"
+Environment="DB_NAME=ad_platform"
+Environment="JWT_SECRET=__REPLACE_ME__"
+Environment="AES_SECRET_KEY=__REPLACE_ME__"
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ad-platform-main

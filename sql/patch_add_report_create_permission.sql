@@ -1,5 +1,7 @@
--- 已有库升级：补充 report:create 权限，并授予 operator（与 init_db 一致）
--- 执行：在 ad_platform 库中 psql -f sql/patch_add_report_create_permission.sql
+-- 说明：
+-- 1) 当前以 sql/init_db.sql 作为唯一主初始化脚本。
+-- 2) 本文件仅用于已有库增量升级兼容。
+-- 3) 新环境请直接执行 sql/init_db.sql。
 
 INSERT INTO permissions (name, description)
 VALUES ('report:create', '批量或补录上报')

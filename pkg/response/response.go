@@ -126,7 +126,7 @@ func getHTTPStatus(code ResponseCode) int {
 func Success(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, Response{
 		Code:    CodeSuccess,
-		Message: message,
+		Message: localizeMessage(c, message),
 	})
 }
 
@@ -134,7 +134,7 @@ func Success(c *gin.Context, message string) {
 func SuccessData(c *gin.Context, message string, data interface{}) {
 	c.JSON(http.StatusOK, Response{
 		Code:    CodeSuccess,
-		Message: message,
+		Message: localizeMessage(c, message),
 		Data:    data,
 	})
 }
@@ -148,7 +148,7 @@ func SuccessPaginated(c *gin.Context, message string, data interface{}, total in
 
 	c.JSON(http.StatusOK, Response{
 		Code:    CodeSuccess,
-		Message: message,
+		Message: localizeMessage(c, message),
 		Data:    data,
 		Meta: &Meta{
 			Total:      total,
@@ -163,7 +163,7 @@ func SuccessPaginated(c *gin.Context, message string, data interface{}, total in
 func Created(c *gin.Context, message string, data interface{}) {
 	c.JSON(http.StatusCreated, Response{
 		Code:    CodeSuccess,
-		Message: message,
+		Message: localizeMessage(c, message),
 		Data:    data,
 	})
 }
@@ -173,7 +173,7 @@ func Error(c *gin.Context, code ResponseCode, message string) {
 	httpStatus := getHTTPStatus(code)
 	c.JSON(httpStatus, Response{
 		Code:    code,
-		Message: message,
+		Message: localizeMessage(c, message),
 	})
 }
 
@@ -182,7 +182,7 @@ func ErrorApp(c *gin.Context, err *AppError) {
 	httpStatus := getHTTPStatus(err.Code)
 	resp := Response{
 		Code:    err.Code,
-		Message: err.Message,
+		Message: localizeMessage(c, err.Message),
 	}
 	if len(err.Details) > 0 {
 		resp.Errors = err.Details
@@ -194,7 +194,7 @@ func ErrorApp(c *gin.Context, err *AppError) {
 func ErrorValidation(c *gin.Context, message string, details []ErrorDetail) {
 	c.JSON(http.StatusBadRequest, Response{
 		Code:    CodeValidationError,
-		Message: message,
+		Message: localizeMessage(c, message),
 		Errors:  details,
 	})
 }

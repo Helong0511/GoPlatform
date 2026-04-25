@@ -31,9 +31,13 @@ func NewAdHandler(adService *ad.AdService, aesUtils *security.AESUtils) *AdHandl
 }
 
 // SetupRoutes 设置广告相关路由
-func (h *AdHandler) SetupRoutes(engine *gin.Engine, public *gin.RouterGroup, protected *gin.RouterGroup) {
+func (h *AdHandler) SetupRoutes(engine *gin.Engine, public *gin.RouterGroup, protected *gin.RouterGroup, apiKeyGuard ...gin.HandlerFunc) {
 	// 公开接口 - 只支持POST
-	public.POST("/getWebTask", h.getAds)
+	if len(apiKeyGuard) > 0 && apiKeyGuard[0] != nil {
+		public.POST("/getWebTask", apiKeyGuard[0], h.getAds)
+	} else {
+		public.POST("/getWebTask", h.getAds)
+	}
 
 	// 广告管理
 	ads := protected.Group("/ads")
