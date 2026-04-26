@@ -130,6 +130,7 @@ redis:
       max_retry_backoff: 1s
 
 # Pulsar 消息队列配置（异步上报/消费）
+# 注意：按当前 cmd/main.go 实现，服务启动时默认跳过 Pulsar 初始化；以下配置为预留项。
 pulsar:
   # Pulsar 连接地址
   url: "pulsar://localhost:6650"
