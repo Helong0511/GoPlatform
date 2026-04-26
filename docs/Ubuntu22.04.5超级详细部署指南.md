@@ -3,6 +3,9 @@
 本文档为 GoPlatform **单服务标准版**部署指南。  
 平台入口仅 `ad-platform-main`，不再包含独立任务服务或独立上报服务。
 
+> 注意：按当前 `cmd/main.go` 实现，服务启动时会**跳过 Pulsar 初始化**（开发策略保留）。  
+> 若你的生产链路依赖 Pulsar，请先在代码中恢复/开启初始化逻辑，再按本指南配置与放通 Pulsar。
+
 ## 目录索引
 
 - [1. 架构与端口](#1-架构与端口)
@@ -28,7 +31,7 @@
 - 主服务：`ad-platform-main`（`8960`）
 - 数据库：PostgreSQL / MySQL8.0（按 `database.driver` 选择）
 - 缓存：Redis（`6379`）
-- 消息：Pulsar（`6650`）
+- 消息：Pulsar（`6650`，当前版本默认不在主程序初始化）
 - 反向代理：Nginx（`80/443`）
 - 监控：Prometheus（`9090`）
 
@@ -50,6 +53,8 @@ sudo apt install -y git curl wget vim nginx redis-server postgresql postgresql-c
 
 按需安装 Go、Node.js、Rust（如需编译 rust-security）。  
 若数据库为远程托管（RDS 等），可不安装本机数据库服务，但需正确配置 `DB_HOST` / `DB_PORT`。
+
+说明：当前版本即使安装了 Pulsar，主程序也会跳过初始化；仅在你修改代码启用 Pulsar 后，该依赖才是运行必需项。
 
 ## 3. 拉取代码与依赖
 
@@ -81,6 +86,11 @@ go mod tidy
 - `REDIS_PASSWORD`（如有）
 - `ENVIRONMENT`（建议生产环境为 `production`）
 - `AUTH_ALLOW_PUBLIC_REGISTER`（`true/false`，生产建议 `false`）
+
+Pulsar 配置提示：
+
+- 当前版本即使配置了 `pulsar.*` 也不会在主程序初始化连接。
+- 建议保留配置项，便于后续启用消息链路时直接切换。
 
 公开注册开关规则：
 
