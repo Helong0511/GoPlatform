@@ -86,6 +86,9 @@ func (c *Config) ValidateConfig() error {
 	if c.Logging.Level == "" {
 		return fmt.Errorf("logging level cannot be empty")
 	}
+	if c.Logging.SlowRequestMS < 0 {
+		return fmt.Errorf("logging slow_request_ms cannot be negative")
+	}
 
 	// 验证CORS配置
 	if len(c.CORS.AllowOrigins) == 0 {
@@ -183,6 +186,9 @@ func (c *Config) SetDefaults() {
 
 	if c.Logging.Format == "" {
 		c.Logging.Format = "json"
+	}
+	if c.Logging.SlowRequestMS == 0 {
+		c.Logging.SlowRequestMS = 300
 	}
 
 	if len(c.CORS.AllowOrigins) == 0 {

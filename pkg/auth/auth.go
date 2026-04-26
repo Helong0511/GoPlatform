@@ -72,6 +72,7 @@ func (a *AuthMiddleware) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
 		if authHeader == "" {
+			response.SetErrorReason(c, response.ReasonMissingAuthHeader)
 			response.Unauthorized(c, response.MsgAuthHeaderRequired)
 			c.Abort()
 			return
@@ -79,12 +80,14 @@ func (a *AuthMiddleware) AuthMiddleware() gin.HandlerFunc {
 
 		// 严格要求 Bearer 前缀，避免兼容模式带来的歧义
 		if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			response.SetErrorReason(c, response.ReasonInvalidBearerFormat)
 			response.Unauthorized(c, response.MsgBearerFormatRequired)
 			c.Abort()
 			return
 		}
 		tokenString := strings.TrimSpace(authHeader[len("Bearer "):])
 		if tokenString == "" {
+			response.SetErrorReason(c, response.ReasonMissingBearerToken)
 			response.Unauthorized(c, response.MsgBearerTokenRequired)
 			c.Abort()
 			return
@@ -93,6 +96,7 @@ func (a *AuthMiddleware) AuthMiddleware() gin.HandlerFunc {
 		// 解析token
 		claims, err := a.ValidateJWT(tokenString)
 		if err != nil {
+			response.SetErrorReason(c, response.ReasonInvalidOrExpiredToken)
 			response.Unauthorized(c, response.MsgInvalidOrExpiredToken)
 			c.Abort()
 			return

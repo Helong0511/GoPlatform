@@ -61,6 +61,7 @@ func UserContextMiddleware(userService *admin.UserService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userIDStr, exists := auth.GetUserIDFromContext(c)
 		if !exists {
+			response.SetErrorReason(c, response.ReasonUserNotAuthenticated)
 			response.Unauthorized(c, response.MsgUserNotAuthenticated)
 			c.Abort()
 			return
@@ -68,6 +69,7 @@ func UserContextMiddleware(userService *admin.UserService) gin.HandlerFunc {
 
 		userID, err := strconv.ParseUint(userIDStr, 10, 32)
 		if err != nil {
+			response.SetErrorReason(c, response.ReasonUserNotAuthenticated)
 			response.Unauthorized(c, response.MsgUserNotAuthenticated)
 			c.Abort()
 			return
@@ -75,12 +77,14 @@ func UserContextMiddleware(userService *admin.UserService) gin.HandlerFunc {
 
 		user, err := userService.GetUserByID(uint(userID))
 		if err != nil {
+			response.SetErrorReason(c, response.ReasonUserNotAuthenticated)
 			response.Unauthorized(c, response.MsgUserNotAuthenticated)
 			c.Abort()
 			return
 		}
 
 		if !user.Status {
+			response.SetErrorReason(c, response.ReasonUserLocked)
 			response.Forbidden(c, response.MsgUserLockedCannotLogin)
 			c.Abort()
 			return
@@ -97,6 +101,7 @@ func RBACMiddleware(requiredPermission string) gin.HandlerFunc {
 		// 从上下文中获取用户信息
 		user, exists := c.Get("user")
 		if !exists {
+			response.SetErrorReason(c, response.ReasonUserNotAuthenticated)
 			response.Unauthorized(c, response.MsgUserNotAuthenticated)
 			c.Abort()
 			return
@@ -127,6 +132,7 @@ func RBACMiddleware(requiredPermission string) gin.HandlerFunc {
 		}
 
 		if !hasPermission {
+			response.SetErrorReason(c, response.ReasonInsufficientPermission)
 			response.Forbidden(c, response.MsgInsufficientPermissions)
 			c.Abort()
 			return
@@ -142,6 +148,7 @@ func DepartmentMiddleware() gin.HandlerFunc {
 		// 从上下文中获取用户信息
 		user, exists := c.Get("user")
 		if !exists {
+			response.SetErrorReason(c, response.ReasonUserNotAuthenticated)
 			response.Unauthorized(c, response.MsgUserNotAuthenticated)
 			c.Abort()
 			return
@@ -159,6 +166,7 @@ func DepartmentMiddleware() gin.HandlerFunc {
 
 		// 检查用户是否属于某个部门
 		if u.DepartmentID == nil {
+			response.SetErrorReason(c, response.ReasonDepartmentNotAssigned)
 			response.Forbidden(c, response.MsgDepartmentNotAssigned)
 			c.Abort()
 			return
@@ -175,6 +183,7 @@ func APIKeyMiddleware(userService *admin.UserService, requiredScope string) gin.
 	return func(c *gin.Context) {
 		apiKey := strings.TrimSpace(c.GetHeader("X-API-Key"))
 		if apiKey == "" {
+			response.SetErrorReason(c, response.ReasonMissingAPIKey)
 			response.Unauthorized(c, response.MsgAPIKeyRequired)
 			c.Abort()
 			return
@@ -183,15 +192,18 @@ func APIKeyMiddleware(userService *admin.UserService, requiredScope string) gin.
 		user, err := userService.ValidateAPIKey(apiKey, requiredScope, c.ClientIP())
 		if err != nil {
 			if errors.Is(err, common.ErrForbidden) {
+				response.SetErrorReason(c, response.ReasonAPIKeyScopeDenied)
 				response.Forbidden(c, response.MsgAPIKeyScopeDenied)
 				c.Abort()
 				return
 			}
+			response.SetErrorReason(c, response.ReasonInvalidAPIKey)
 			response.Unauthorized(c, response.MsgInvalidAPIKey)
 			c.Abort()
 			return
 		}
 		if !user.Status {
+			response.SetErrorReason(c, response.ReasonUserLocked)
 			response.Forbidden(c, response.MsgUserLockedCannotLogin)
 			c.Abort()
 			return

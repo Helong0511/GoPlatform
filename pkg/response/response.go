@@ -8,6 +8,33 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	// ContextResponseCodeKey 用于在 gin 上下文中透传业务响应码，便于统一日志记录。
+	ContextResponseCodeKey = "response_code"
+	// ContextResponseMessageKey 用于在 gin 上下文中透传响应消息，便于统一日志记录。
+	ContextResponseMessageKey = "response_message"
+	// ContextErrorCategoryKey 用于在 gin 上下文中透传错误分类，便于日志聚合。
+	ContextErrorCategoryKey = "error_category"
+	// ContextErrorReasonKey 用于在 gin 上下文中透传错误原因，便于排障定位。
+	ContextErrorReasonKey = "error_reason"
+)
+
+const (
+	ReasonMissingAuthHeader    = "missing_auth_header"
+	ReasonInvalidBearerFormat  = "invalid_bearer_format"
+	ReasonMissingBearerToken   = "missing_bearer_token"
+	ReasonInvalidOrExpiredToken = "invalid_or_expired_token"
+	ReasonUserNotAuthenticated = "user_not_authenticated"
+	ReasonUserLocked           = "user_locked"
+	ReasonInsufficientPermission = "insufficient_permission"
+	ReasonDepartmentNotAssigned = "department_not_assigned"
+	ReasonMissingAPIKey        = "missing_api_key"
+	ReasonInvalidAPIKey        = "invalid_api_key"
+	ReasonAPIKeyScopeDenied    = "api_key_scope_denied"
+	ReasonRateLimited          = "rate_limited"
+	ReasonCircuitOpen          = "circuit_breaker_open"
+)
+
 // ResponseCode 响应状态码类型
 type ResponseCode int
 
@@ -124,17 +151,23 @@ func getHTTPStatus(code ResponseCode) int {
 
 // Success 成功响应（无数据）
 func Success(c *gin.Context, message string) {
+	localized := localizeMessage(c, message)
+	c.Set(ContextResponseCodeKey, CodeSuccess)
+	c.Set(ContextResponseMessageKey, localized)
 	c.JSON(http.StatusOK, Response{
 		Code:    CodeSuccess,
-		Message: localizeMessage(c, message),
+		Message: localized,
 	})
 }
 
 // SuccessData 成功响应（带数据）
 func SuccessData(c *gin.Context, message string, data interface{}) {
+	localized := localizeMessage(c, message)
+	c.Set(ContextResponseCodeKey, CodeSuccess)
+	c.Set(ContextResponseMessageKey, localized)
 	c.JSON(http.StatusOK, Response{
 		Code:    CodeSuccess,
-		Message: localizeMessage(c, message),
+		Message: localized,
 		Data:    data,
 	})
 }
@@ -146,9 +179,12 @@ func SuccessPaginated(c *gin.Context, message string, data interface{}, total in
 		totalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
 	}
 
+	localized := localizeMessage(c, message)
+	c.Set(ContextResponseCodeKey, CodeSuccess)
+	c.Set(ContextResponseMessageKey, localized)
 	c.JSON(http.StatusOK, Response{
 		Code:    CodeSuccess,
-		Message: localizeMessage(c, message),
+		Message: localized,
 		Data:    data,
 		Meta: &Meta{
 			Total:      total,
@@ -161,9 +197,12 @@ func SuccessPaginated(c *gin.Context, message string, data interface{}, total in
 
 // Created 创建成功响应
 func Created(c *gin.Context, message string, data interface{}) {
+	localized := localizeMessage(c, message)
+	c.Set(ContextResponseCodeKey, CodeSuccess)
+	c.Set(ContextResponseMessageKey, localized)
 	c.JSON(http.StatusCreated, Response{
 		Code:    CodeSuccess,
-		Message: localizeMessage(c, message),
+		Message: localized,
 		Data:    data,
 	})
 }
@@ -171,18 +210,36 @@ func Created(c *gin.Context, message string, data interface{}) {
 // Error 错误响应
 func Error(c *gin.Context, code ResponseCode, message string) {
 	httpStatus := getHTTPStatus(code)
+	localized := localizeMessage(c, message)
+	c.Set(ContextResponseCodeKey, code)
+	c.Set(ContextResponseMessageKey, localized)
+	if _, exists := c.Get(ContextErrorCategoryKey); !exists {
+		c.Set(ContextErrorCategoryKey, inferErrorCategory(code))
+	}
+	if _, exists := c.Get(ContextErrorReasonKey); !exists {
+		c.Set(ContextErrorReasonKey, message)
+	}
 	c.JSON(httpStatus, Response{
 		Code:    code,
-		Message: localizeMessage(c, message),
+		Message: localized,
 	})
 }
 
 // ErrorApp 应用错误响应
 func ErrorApp(c *gin.Context, err *AppError) {
 	httpStatus := getHTTPStatus(err.Code)
+	localized := localizeMessage(c, err.Message)
+	c.Set(ContextResponseCodeKey, err.Code)
+	c.Set(ContextResponseMessageKey, localized)
+	if _, exists := c.Get(ContextErrorCategoryKey); !exists {
+		c.Set(ContextErrorCategoryKey, inferErrorCategory(err.Code))
+	}
+	if _, exists := c.Get(ContextErrorReasonKey); !exists {
+		c.Set(ContextErrorReasonKey, err.Message)
+	}
 	resp := Response{
 		Code:    err.Code,
-		Message: localizeMessage(c, err.Message),
+		Message: localized,
 	}
 	if len(err.Details) > 0 {
 		resp.Errors = err.Details
@@ -192,11 +249,59 @@ func ErrorApp(c *gin.Context, err *AppError) {
 
 // ErrorValidation 验证错误响应
 func ErrorValidation(c *gin.Context, message string, details []ErrorDetail) {
+	localized := localizeMessage(c, message)
+	c.Set(ContextResponseCodeKey, CodeValidationError)
+	c.Set(ContextResponseMessageKey, localized)
+	if _, exists := c.Get(ContextErrorCategoryKey); !exists {
+		c.Set(ContextErrorCategoryKey, inferErrorCategory(CodeValidationError))
+	}
+	if _, exists := c.Get(ContextErrorReasonKey); !exists {
+		c.Set(ContextErrorReasonKey, message)
+	}
 	c.JSON(http.StatusBadRequest, Response{
 		Code:    CodeValidationError,
-		Message: localizeMessage(c, message),
+		Message: localized,
 		Errors:  details,
 	})
+}
+
+func inferErrorCategory(code ResponseCode) string {
+	switch {
+	case code == CodeSuccess:
+		return ""
+	case code == CodeUnauthorized:
+		return "auth"
+	case code == CodeForbidden:
+		return "permission"
+	case code == CodeTooManyRequests:
+		return "rate_limit"
+	case code == CodeValidationError || code == CodeBadRequest:
+		return "validation"
+	case code == CodeNotFound:
+		return "not_found"
+	case code >= 500 && code < 600:
+		return "server"
+	case code >= 1000:
+		return "business"
+	default:
+		return "unknown"
+	}
+}
+
+// SetErrorReason 设置标准化错误原因（建议使用 Reason* 常量）。
+func SetErrorReason(c *gin.Context, reason string) {
+	if c == nil {
+		return
+	}
+	c.Set(ContextErrorReasonKey, reason)
+}
+
+// SetErrorCategory 设置标准化错误分类。
+func SetErrorCategory(c *gin.Context, category string) {
+	if c == nil {
+		return
+	}
+	c.Set(ContextErrorCategoryKey, category)
 }
 
 // BadRequest 400错误响应

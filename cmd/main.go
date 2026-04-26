@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +16,7 @@ import (
 	"ad-platform/internal/report"
 	"ad-platform/internal/security"
 	"ad-platform/pkg/db"
+	"ad-platform/pkg/logger"
 	"ad-platform/pkg/metrics"
 	"ad-platform/pkg/middleware"
 	"ad-platform/pkg/notify"
@@ -29,122 +30,141 @@ import (
 )
 
 func main() {
-	log.Println("Starting AD Platform Main Service...")
+	logger.Init("info", "json")
+	logger.S().Info("starting AD Platform Main Service")
 
 	// 加载配置
-	log.Println("Loading configuration...")
-	config, err := util.LoadConfig("config/config.yaml")
+	configPath, err := resolveConfigPath()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logger.S().Error("failed to resolve config path", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Configuration loaded successfully")
+	logger.S().Info("loading configuration", "config_path", configPath)
+	config, err := util.LoadConfig(configPath)
+	if err != nil {
+		logger.S().Error("failed to load config", "error", err)
+		os.Exit(1)
+	}
+	logger.Init(config.Logging.Level, config.Logging.Format)
+	logger.S().Info("configuration loaded successfully",
+		"env", config.Environment,
+		"log_level", config.Logging.Level,
+		"log_format", config.Logging.Format,
+	)
 
 	// 设置默认值
-	log.Println("Setting defaults...")
+	logger.S().Info("setting defaults")
 	config.SetDefaults()
-	log.Println("Defaults set")
+	logger.S().Info("defaults set")
 
 	// 验证配置
-	log.Println("Validating configuration...")
+	logger.S().Info("validating configuration")
 	if err := config.ValidateConfig(); err != nil {
-		log.Fatalf("Invalid configuration: %v", err)
+		logger.S().Error("invalid configuration", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Configuration validated successfully")
+	logger.S().Info("configuration validated successfully")
 
 	// 启动监控服务器
-	log.Printf("Starting metrics server on port %d...", config.Metrics.Port)
+	logger.S().Info("starting metrics server", "port", config.Metrics.Port, "path", config.Metrics.Path)
 	metrics.StartServer(config.Metrics.Port, config.Metrics.Path)
-	log.Println("Metrics server started")
+	logger.S().Info("metrics server started")
 
 	// 初始化数据库
-	log.Println("Initializing database...")
+	logger.S().Info("initializing database")
 	dbInstance, err := db.NewPostgresDB(&config.Database)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		logger.S().Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Database initialized successfully")
+	logger.S().Info("database initialized successfully")
 
 	// 初始化 Redis
-	log.Println("Initializing Redis...")
+	logger.S().Info("initializing redis")
 	redisClient, err := redis.NewRedisClient(&config.Redis)
 	if err != nil {
-		log.Printf("Warning: Failed to connect to redis: %v, running without cache", err)
+		logger.S().Warn("failed to connect redis, running without cache", "error", err)
 		// 创建 mock 客户端，所有操作将不执行
 		redisClient = redis.NewMockRedisClient()
 	}
-	log.Println("Redis initialized")
+	logger.S().Info("redis initialized")
 
 	// 初始化 Pulsar
-	log.Println("Initializing Pulsar...")
+	logger.S().Info("initializing pulsar")
 	var pulsarProducer *pulsar.PulsarProducer = nil
 
-	log.Printf("Info: Skipping Pulsar initialization for development")
-	log.Println("Pulsar initialization skipped")
+	logger.S().Info("skipping pulsar initialization for development")
 
 	// 初始化安全管理器
-	log.Println("Initializing security manager...")
+	logger.S().Info("initializing security manager")
 	securityManager, err := security.NewSecurityManager(config.Security.RustLibPath)
 	if err != nil {
-		log.Printf("Warning: Failed to initialize security manager: %v", err)
+		logger.S().Warn("failed to initialize security manager, using fallback", "error", err)
 		// 使用默认的安全管理器
 		securityManager = &security.SecurityManager{}
 	}
-	log.Println("Security manager initialized")
+	logger.S().Info("security manager initialized")
 
 	// 初始化服务
-	log.Println("Initializing services...")
+	logger.S().Info("initializing services")
 	userService := admin.NewUserService(dbInstance, redisClient)
 	roleService := admin.NewRoleService(dbInstance)
 	departmentService := admin.NewDepartmentService(dbInstance)
 	adService := ad.NewAdService(dbInstance, redisClient)
 	reportService := report.NewReportService(dbInstance, pulsarProducer)
-	log.Println("Services initialized")
+	logger.S().Info("services initialized")
 
 	// 启动 Pulsar 消费者
 	// 由于在开发模式下跳过了 Pulsar 初始化，这里直接跳过消费者启动
-	log.Printf("Info: Skipping Pulsar consumer startup")
+	logger.S().Info("skipping pulsar consumer startup")
 
 	// 初始化速率限制器
-	log.Println("Initializing rate limiter...")
+	logger.S().Info("initializing rate limiter")
 	rateLimiter := middleware.NewRateLimiter(
 		rate.Limit(config.RateLimit.RequestsPerSecond),
 		config.RateLimit.Burst,
 	)
-	log.Println("Rate limiter initialized")
+	logger.S().Info("rate limiter initialized",
+		"requests_per_second", config.RateLimit.RequestsPerSecond,
+		"burst", config.RateLimit.Burst,
+	)
 
 	aesSecret, aesSource, err := util.ResolveSecret(util.EnvAESSecretKey, config.Security.AESSecret)
 	if err != nil {
-		log.Fatalf("Failed to resolve AES secret: %v", err)
+		logger.S().Error("failed to resolve AES secret", "error", err)
+		os.Exit(1)
 	}
-	log.Printf("AES secret loaded from %s", aesSource)
+	logger.S().Info("AES secret loaded", "source", aesSource)
 
 	jwtSecret, jwtSource, err := util.ResolveSecret(util.EnvJWTSecret, config.JWT.Secret)
 	if err != nil {
-		log.Fatalf("Failed to resolve JWT secret: %v", err)
+		logger.S().Error("failed to resolve JWT secret", "error", err)
+		os.Exit(1)
 	}
-	log.Printf("JWT secret loaded from %s", jwtSource)
+	logger.S().Info("JWT secret loaded", "source", jwtSource)
 
 	jwtExpiresIn, err := time.ParseDuration(config.JWT.ExpiresIn)
 	if err != nil {
-		log.Fatalf("Invalid JWT expires_in: %v", err)
+		logger.S().Error("invalid JWT expires_in", "error", err)
+		os.Exit(1)
 	}
 
 	var emailSender notify.EmailSender
 	if config.Email.Enabled {
 		emailSender = notify.NewSMTPEmailSender(config.Email)
-		log.Printf("Email sender enabled: %s:%d", config.Email.Host, config.Email.Port)
+		logger.S().Info("email sender enabled", "host", config.Email.Host, "port", config.Email.Port)
 	} else {
-		log.Printf("Email sender disabled")
+		logger.S().Info("email sender disabled")
 	}
 
 	serverTimeout, err := time.ParseDuration(config.Server.Timeout)
 	if err != nil {
-		log.Printf("Warning: invalid server timeout, fallback to 30s: %v", err)
+		logger.S().Warn("invalid server timeout, fallback to 30s", "error", err)
 		serverTimeout = 30 * time.Second
 	}
 
 	// 初始化路由
-	log.Println("Initializing router...")
+	logger.S().Info("initializing router")
 	router, err := api.NewRouter(
 		userService,
 		roleService,
@@ -159,17 +179,25 @@ func main() {
 		emailSender,
 	)
 	if err != nil {
-		log.Fatalf("Failed to initialize router: %v", err)
+		logger.S().Error("failed to initialize router", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Router initialized")
+	logger.S().Info("router initialized")
 
 	// 创建 Gin 引擎
-	log.Println("Creating Gin engine...")
-	engine := gin.Default()
-	log.Println("Gin engine created")
+	logger.S().Info("creating Gin engine")
+	engine := gin.New()
+	engine.Use(
+		logger.RequestIDMiddleware(),
+		logger.AccessLogMiddlewareWithOptions(logger.AccessLogOptions{
+			SlowRequestThreshold: time.Duration(config.Logging.SlowRequestMS) * time.Millisecond,
+		}),
+		logger.RecoveryMiddleware(),
+	)
+	logger.S().Info("Gin engine created with custom logging middlewares")
 
 	// 配置 CORS
-	log.Println("Configuring CORS...")
+	logger.S().Info("configuring CORS")
 	engine.Use(cors.New(cors.Config{
 		AllowOrigins:     config.CORS.AllowOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -178,25 +206,25 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
-	log.Println("CORS configured")
+	logger.S().Info("CORS configured")
 
 	// 启用速率限制
-	log.Println("Enabling rate limit...")
+	logger.S().Info("enabling rate limit")
 	engine.Use(rateLimiter.RateLimitMiddleware())
-	log.Println("Rate limit enabled")
+	logger.S().Info("rate limit enabled")
 
 	// 启用多语言解析（默认简体中文）
-	log.Println("Enabling locale middleware...")
+	logger.S().Info("enabling locale middleware")
 	engine.Use(middleware.LocaleMiddleware())
-	log.Println("Locale middleware enabled")
+	logger.S().Info("locale middleware enabled")
 
 	// 设置路由
-	log.Println("Setting up routes...")
+	logger.S().Info("setting up routes")
 	router.SetupRoutes(engine)
-	log.Println("Routes setup completed")
+	logger.S().Info("routes setup completed")
 
 	// 创建 HTTP 服务器
-	log.Println("Creating HTTP server...")
+	logger.S().Info("creating HTTP server")
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port),
 		Handler:           engine,
@@ -205,34 +233,36 @@ func main() {
 		IdleTimeout:       serverTimeout,
 		ReadHeaderTimeout: serverTimeout,
 	}
-	log.Printf("HTTP server created on %s:%d", config.Server.Host, config.Server.Port)
+	logger.S().Info("HTTP server created", "host", config.Server.Host, "port", config.Server.Port)
 
 	// 启动服务器
-	log.Printf("Starting HTTP server on %s:%d...", config.Server.Host, config.Server.Port)
+	logger.S().Info("starting HTTP server", "host", config.Server.Host, "port", config.Server.Port)
 	go func() {
-		log.Printf("Server is running on %s:%d", config.Server.Host, config.Server.Port)
+		logger.S().Info("server is running", "host", config.Server.Host, "port", config.Server.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			logger.S().Error("failed to start server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	// 等待服务器启动
-	log.Printf("Server starting...")
+	logger.S().Info("server starting")
 	time.Sleep(2 * time.Second)
-	log.Println("Server startup completed")
+	logger.S().Info("server startup completed")
 
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down server...")
+	logger.S().Info("shutting down server")
 
 	// 优雅关闭
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		logger.S().Error("server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
 
 	// 关闭服务
@@ -242,5 +272,24 @@ func main() {
 	dbInstance.Close()
 	securityManager.Close()
 
-	log.Println("Server exited")
+	logger.S().Info("server exited")
+}
+
+func resolveConfigPath() (string, error) {
+	if p := os.Getenv("CONFIG_PATH"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+
+	candidates := []string{
+		"config/config.yaml",
+		"config.yaml",
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("no config file found, tried CONFIG_PATH, config/config.yaml, config.yaml")
 }

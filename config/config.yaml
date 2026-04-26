@@ -1,21 +1,38 @@
+# 运行环境：development / test / production
+# 生产建议：固定为 production，避免加载开发期默认行为
 environment: production
 
+# HTTP 服务配置
 server:
+  # 服务监听端口
+  # 生产建议：由网关/安全组放行，避免直接暴露管理端口
   port: 8960
+  # 服务监听地址，0.0.0.0 表示监听所有网卡
   host: 0.0.0.0
+  # 单个请求超时时间（如 30s / 1m）
   timeout: 30s
 
 # 认证：allow_public_register 支持 true/false；不配置时按 environment 自动决定
 # （development/dev/local 默认开启，其它默认关闭）
 auth:
+  # 是否允许公开注册
+  # 生产建议：关闭（false），仅允许后台创建或邀请码注册
   allow_public_register: false
 
+# 邮件发送配置（找回密码、通知等）
 email:
+  # 是否启用邮件功能
+  # 生产建议：按业务开启，并使用企业 SMTP（避免个人邮箱）
   enabled: false
+  # SMTP 服务器地址
   host: smtp.gmail.com
+  # SMTP 端口（TLS 常见 587）
   port: 587
+  # SMTP 用户名
   username: ""
+  # SMTP 密码或授权码
   password: ""
+  # 发件人邮箱
   from: ""
 
 # 数据库连接池配置
@@ -27,17 +44,32 @@ email:
 #   1) 切换 driver 后，请确保 DB_PORT 与数据库实际端口一致（PostgreSQL 通常 5432，MySQL 通常 3306）
 #   2) cluster 节点建议显式补齐 driver，避免多节点混用时歧义
 database:
+  # 数据库驱动：postgres | mysql
+  # 生产建议：与初始化脚本、迁移工具保持一致后再固定
   driver: postgres # postgres | mysql
+  # 数据库地址
   host: localhost
+  # 数据库端口
   port: 5432
+  # 数据库用户名
   user: postgres
+  # 数据库密码
+  # 生产建议：使用强密码，并通过环境变量/密钥系统注入
   password: ""
+  # 数据库名
   dbname: ad_platform
+  # SSL 模式（生产建议根据实际开启）
+  # 生产建议：优先 require/verify-full，避免明文传输
   sslmode: disable
+  # 连接池最大打开连接数
   max_open_conns: 16
+  # 连接池最大空闲连接数
   max_idle_conns: 8
+  # 连接最大生命周期
   conn_max_lifetime: 30m
+  # 空闲连接最大空闲时长
   conn_max_idle_time: 10m
+  # 集群节点配置（可选）
   cluster:
     - host: localhost
       port: 5432
@@ -53,19 +85,35 @@ database:
 # Redis连接池配置
 # 适用于4核CPU，16GB内存服务器的高并发配置
 redis:
+  # Redis 地址
   host: localhost
+  # Redis 端口
   port: 6379
+  # Redis 密码（无密码留空）
+  # 生产建议：必须设置访问密码，并限制内网访问
   password: ""
+  # Redis 库编号
+  # 生产建议：按业务隔离库或实例，避免与其它系统混用
   db: 0
+  # 连接池大小
   pool_size: 80
+  # 最小空闲连接数
   min_idle_conns: 20
+  # 建连超时
   dial_timeout: 2s
+  # 读超时
   read_timeout: 1s
+  # 写超时
   write_timeout: 1s
+  # 空闲连接超时
   idle_timeout: 5m
+  # 命令最大重试次数
   max_retries: 3
+  # 重试最小退避时间
   min_retry_backoff: 100ms
+  # 重试最大退避时间
   max_retry_backoff: 1s
+  # Redis 集群节点配置（可选）
   cluster:
     - host: localhost
       port: 6379
@@ -81,34 +129,59 @@ redis:
       min_retry_backoff: 100ms
       max_retry_backoff: 1s
 
+# Pulsar 消息队列配置（异步上报/消费）
 pulsar:
+  # Pulsar 连接地址
   url: "pulsar://localhost:6650"
+  # 主题（Topic）
   topic: "persistent://public/default/ad_reports"
+  # 订阅名（消费者组）
   subscription: "ad_report_consumer"
+  # 单条消息最大体积（字节）
   max_message_size: 1048576
 
+# JWT 鉴权配置
 jwt:
+  # JWT 密钥（生产必须设置强随机值）
+  # 生产建议：长度 >= 32，定期轮换，并避免写入仓库
   secret: ""
+  # Token 有效期（如 1h / 24h）
+  # 生产建议：短有效期 + 刷新机制（例如 15m~2h）
   expires_in: 1h
 
+# 安全模块配置
 security:
   # Rust 动态库路径按运行平台设置：
   # - Windows(debug):  ./rust-security/target/debug/rust_security.dll
   # - Windows(release):./rust-security/target/release/rust_security.dll
   # - Linux(release):  ./rust-security/target/release/librust_security.so
   rust_lib_path: ./rust-security/target/debug/rust_security.dll
+  # AES 密钥（用于数据加解密，生产必须设置）
+  # 生产建议：使用 16/24/32 字节密钥并通过密钥管理服务下发
   aes_secret: ""
 
+# Prometheus 指标暴露配置
 metrics:
+  # 指标服务端口
+  # 生产建议：仅对 Prometheus 网段开放，不对公网暴露
   port: 9090
+  # 指标抓取路径
   path: /metrics
 
+# 日志配置
 logging:
-  level: info
+  # 日志级别：debug / info / warn / error
+  # 生产建议：使用 info（排障时短时调高）
+  level: debug
+  # 日志格式：json / text
   format: json
+  # 慢请求阈值（毫秒）
+  slow_request_ms: 200
 
 # CORS 跨域配置
 cors:
+  # 允许跨域的前端来源列表
+  # 生产建议：仅保留正式域名，删除 localhost/127.0.0.1
   allow_origins:
     - "http://localhost:3000"
     - "http://127.0.0.1:3000"
@@ -117,5 +190,8 @@ cors:
 
 # 速率限制配置
 rate_limit:
+  # 每秒允许请求数（支持小数）
+  # 生产建议：按接口分级设置（登录/回调接口更严格）
   requests_per_second: 50.0
+  # 突发请求桶容量
   burst: 200

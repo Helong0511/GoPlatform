@@ -1,0 +1,43 @@
+groups:
+  - name: ad-platform-log-observability
+    interval: 30s
+    rules:
+      - alert: ADPlatformAuthFailuresSpike
+        expr: sum(rate(http_errors_total{service="ad-platform", error_category="auth"}[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+          service: ad-platform
+        annotations:
+          summary: "认证失败速率持续升高"
+          description: "最近5分钟 auth 类错误速率超过 5 次/秒并持续 10 分钟，请检查 JWT、网关请求头或登录链路。"
+
+      - alert: ADPlatformAPIKeyScopeDeniedSpike
+        expr: sum(rate(http_errors_total{service="ad-platform", error_reason="api_key_scope_denied"}[10m])) > 1
+        for: 15m
+        labels:
+          severity: warning
+          service: ad-platform
+        annotations:
+          summary: "API Key 权限拒绝异常增加"
+          description: "api_key_scope_denied 错误持续偏高，请检查下游权限配置、scope 分配与调用方变更。"
+
+      - alert: ADPlatformRateLimitTriggeredFrequently
+        expr: sum(rate(http_errors_total{service="ad-platform", error_reason="rate_limited"}[5m])) > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: ad-platform
+        annotations:
+          summary: "限流触发频率过高"
+          description: "rate_limited 错误速率过高，可能是流量异常或阈值过严，建议检查上游流量和 rate_limit 配置。"
+
+      - alert: ADPlatformServerErrorsHigh
+        expr: sum(rate(http_errors_total{service="ad-platform", error_category="server"}[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          service: ad-platform
+        annotations:
+          summary: "服务端错误率过高"
+          description: "5xx/server 类错误率持续偏高，请优先检查 panic、数据库连接和外部依赖状态。"

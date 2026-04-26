@@ -75,6 +75,7 @@ func (rl *RateLimiter) RateLimitMiddleware() gin.HandlerFunc {
 		limiter := rl.getLimiter(ip)
 
 		if !limiter.Allow() {
+			response.SetErrorReason(c, response.ReasonRateLimited)
 			response.TooManyRequests(c, response.MsgTooManyRequestsRetryLater)
 			c.Abort()
 			return
@@ -171,6 +172,7 @@ func CircuitBreakerMiddleware(cb *CircuitBreaker) gin.HandlerFunc {
 		})
 
 		if err != nil {
+			response.SetErrorReason(c, response.ReasonCircuitOpen)
 			response.Error(c, response.CodeServiceUnavailable, response.MsgServiceUnavailableRetry)
 			c.Abort()
 		}

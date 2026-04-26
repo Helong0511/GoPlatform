@@ -104,8 +104,9 @@ type MetricsConfig struct {
 }
 
 type LoggingConfig struct {
-	Level  string `yaml:"level"`
-	Format string `yaml:"format"`
+	Level         string `yaml:"level"`
+	Format        string `yaml:"format"`
+	SlowRequestMS int    `yaml:"slow_request_ms"`
 }
 
 type CORSConfig struct {
