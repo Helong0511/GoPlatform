@@ -2,7 +2,6 @@ package admin
 
 import (
 	"errors"
-	"strings"
 	"time"
 
 	"ad-platform/internal/common"
@@ -31,44 +30,33 @@ type User struct {
 	Department   *Department `json:"department,omitempty" gorm:"foreignKey:DepartmentID"`
 }
 
-// GetUserByAPIKey 根据 API Key 获取用户
-func (s *UserService) GetUserByAPIKey(apiKey string) (*User, error) {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return nil, common.ErrUserNotFound
-	}
-	keyHash := hashAPIKey(apiKey)
-
-	var key UserAPIKey
-	if err := s.db.DB.Where("key_hash = ? AND status = ?", keyHash, true).First(&key).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.ErrUserNotFound
-		}
-		return nil, err
-	}
-	_ = s.touchAPIKeyLastUsed(key.ID, "")
-	return s.GetUserByID(key.UserID)
-}
-
 // UserService 用户服务
 type UserService struct {
 	db             *db.PostgresDB
 	redis          *redis.RedisClient
 	userLogService *UserLogService
+	minPasswordLen int
 }
 
-// NewUserService 创建用户服务
-func NewUserService(db *db.PostgresDB, redis *redis.RedisClient) *UserService {
+// NewUserService 创建用户服务；minPasswordLen<=0 时使用默认 8。
+func NewUserService(db *db.PostgresDB, redis *redis.RedisClient, minPasswordLen int) *UserService {
+	if minPasswordLen <= 0 {
+		minPasswordLen = 8
+	}
 	userLogService := NewUserLogService(db)
 	return &UserService{
 		db:             db,
 		redis:          redis,
 		userLogService: userLogService,
+		minPasswordLen: minPasswordLen,
 	}
 }
 
 // CreateUser 创建用户
 func (s *UserService) CreateUser(user *User) error {
+	if err := ValidatePlainPassword(user.Password, s.minPasswordLen); err != nil {
+		return err
+	}
 	// 加密密码
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -76,8 +64,8 @@ func (s *UserService) CreateUser(user *User) error {
 	}
 	user.Password = string(hashedPassword)
 
-	// 创建用户
-	return s.db.DB.Create(user).Error
+	user.ID = 0
+	return s.db.DB.Omit("Roles", "Department").Create(user).Error
 }
 
 // GetUserByID 根据ID获取用户
@@ -106,24 +94,50 @@ func (s *UserService) GetUserByUsername(username string) (*User, error) {
 	return &user, nil
 }
 
-// UpdateUser 更新用户
+// UpdateUser 更新用户（仅允许白名单字段，忽略 roles 等关联）
 func (s *UserService) UpdateUser(user *User) error {
-	// 如果密码不为空，加密密码
+	var existing User
+	if err := s.db.DB.First(&existing, user.ID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return common.ErrUserNotFound
+		}
+		return err
+	}
+
+	updates := map[string]interface{}{
+		"email":         user.Email,
+		"name":          user.Name,
+		"phone":         user.Phone,
+		"department_id": user.DepartmentID,
+		"timezone":      user.Timezone,
+	}
+	if user.Username != "" {
+		updates["username"] = user.Username
+	}
 	if user.Password != "" {
+		if err := ValidatePlainPassword(user.Password, s.minPasswordLen); err != nil {
+			return err
+		}
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 		if err != nil {
 			return err
 		}
-		user.Password = string(hashedPassword)
+		updates["password"] = string(hashedPassword)
 	}
 
-	// 更新用户
-	return s.db.DB.Save(user).Error
+	return s.db.DB.Model(&existing).Updates(updates).Error
 }
 
 // DeleteUser 删除用户
 func (s *UserService) DeleteUser(id uint) error {
-	return s.db.DB.Delete(&User{}, id).Error
+	result := s.db.DB.Delete(&User{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return common.ErrUserNotFound
+	}
+	return nil
 }
 
 // ListUsers 列出所有用户
@@ -152,6 +166,9 @@ func (s *UserService) EnableUser(id, operatorID uint, ip string) error {
 	var user User
 	err := s.db.DB.First(&user, id).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return common.ErrUserNotFound
+		}
 		return err
 	}
 
@@ -170,6 +187,9 @@ func (s *UserService) DisableUser(id, operatorID uint, ip string) error {
 	var user User
 	err := s.db.DB.First(&user, id).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return common.ErrUserNotFound
+		}
 		return err
 	}
 

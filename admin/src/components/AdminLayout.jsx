@@ -9,6 +9,8 @@ import {
   ApartmentOutlined,
   ShopOutlined,
   RiseOutlined,
+  SafetyCertificateOutlined,
+  SettingOutlined,
   LogoutOutlined,
   MenuUnfoldOutlined,
   MenuFoldOutlined,
@@ -60,6 +62,18 @@ const menuItems = [
     icon: <RiseOutlined />,
     label: '广告上报',
     permission: 'report:read',
+  },
+  {
+    key: '/ip-access',
+    icon: <SafetyCertificateOutlined />,
+    label: 'IP 访问控制',
+    permission: 'user:read',
+  },
+  {
+    key: '/system-config',
+    icon: <SettingOutlined />,
+    label: '系统配置',
+    permission: 'user:read',
   },
 ];
 

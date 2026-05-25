@@ -8,6 +8,8 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS ip_whitelist_audit;
+DROP TABLE IF EXISTS ip_blacklist_audit;
 DROP TABLE IF EXISTS role_permissions;
 DROP TABLE IF EXISTS user_roles;
 DROP TABLE IF EXISTS user_status_logs;
@@ -484,6 +486,32 @@ WHERE
         r.name = 'customer'
         AND p.name IN ('client:read', 'report:read')
     );
+
+-- IP 黑名单审计表（可选；应用以内存 + Redis 为主，见 sql/ip_blacklist_mysql.sql）
+CREATE TABLE ip_blacklist_audit (
+    id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ip          VARCHAR(45) NOT NULL COMMENT 'IPv4/IPv6 字符串',
+    reason      VARCHAR(255) NOT NULL,
+    banned_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at  TIMESTAMP NULL DEFAULT NULL,
+    source      VARCHAR(64) NOT NULL DEFAULT 'auto',
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_ip_blacklist_audit_ip (ip),
+    KEY idx_ip_blacklist_audit_banned_at (banned_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- IP 白名单审计表（可选；见 sql/ip_whitelist_mysql.sql）
+CREATE TABLE ip_whitelist_audit (
+    id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ip         VARCHAR(45) NOT NULL COMMENT 'IPv4/IPv6 字符串',
+    remark     VARCHAR(255) NOT NULL DEFAULT '',
+    source     VARCHAR(64) NOT NULL DEFAULT 'manual',
+    added_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_ip_whitelist_audit_ip (ip)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 可选：默认超级管理员（按需修改密码哈希）
 -- INSERT INTO users (username, password, email, name, status)

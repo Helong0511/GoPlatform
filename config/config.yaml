@@ -1,6 +1,6 @@
 # 运行环境：development / test / production
-# 生产建议：固定为 production，避免加载开发期默认行为
-environment: production
+# 仓库默认 development：便于本地 postgres sslmode=disable；生产部署改为 production 且 sslmode=require/verify-full
+environment: development
 
 # HTTP 服务配置
 server:
@@ -11,6 +11,15 @@ server:
   host: 0.0.0.0
   # 单个请求超时时间（如 30s / 1m）
   timeout: 30s
+  # JSON/原始请求体最大体积（MB），防大包攻击；0 或未写时默认 10
+  max_request_body_mb: 10
+  # 收到 SIGTERM/SIGINT 后优雅关闭主 HTTP 的最长等待时间
+  shutdown_timeout: 20s
+  # 可信反向代理 CIDR/IP（影响 gin ClientIP、限流键）；留空则仅用直连 RemoteAddr
+  # 也可用环境变量 TRUSTED_PROXIES（逗号分隔）覆盖
+  # trusted_proxies:
+  #   - "127.0.0.1"
+  #   - "10.0.0.0/8"
 
 # 认证：allow_public_register 支持 true/false；不配置时按 environment 自动决定
 # （development/dev/local 默认开启，其它默认关闭）
@@ -18,6 +27,8 @@ auth:
   # 是否允许公开注册
   # 生产建议：关闭（false），仅允许后台创建或邀请码注册
   allow_public_register: false
+  # 管理员创建/修改用户时的明文最短密码（字符数）；0 或未写时默认 8
+  min_password_length: 8
 
 # 邮件发送配置（找回密码、通知等）
 email:
@@ -58,8 +69,8 @@ database:
   password: ""
   # 数据库名
   dbname: ad_platform
-  # SSL 模式（生产建议根据实际开启）
-  # 生产建议：优先 require/verify-full，避免明文传输
+  # SSL/TLS：postgres 用 sslmode；mysql 映射为 DSN 的 tls 参数（true/require/preferred/skip-verify/disable）
+  # 生产建议：postgres 用 require/verify-full；mysql 用 true 或 require，避免 disable
   sslmode: disable
   # 连接池最大打开连接数
   max_open_conns: 16
@@ -130,10 +141,12 @@ redis:
       max_retry_backoff: 1s
 
 # Pulsar 消息队列配置（异步上报/消费）
-# 注意：按当前 cmd/main.go 实现，服务启动时默认跳过 Pulsar 初始化；以下配置为预留项。
+# url 留空时主程序跳过 Pulsar；url 非空且连通失败时：开发环境告警继续，生产环境启动失败。
+# url 留空时可不填 topic/subscription（ValidateConfig 跳过 Pulsar 校验）。
 pulsar:
-  # Pulsar 连接地址
-  url: "pulsar://localhost:6650"
+  # Pulsar 连接地址（不需要消息队列时请设为 ""，主程序将跳过初始化）
+  url: ""
+  # url: "pulsar://localhost:6650"
   # 主题（Topic）
   topic: "persistent://public/default/ad_reports"
   # 订阅名（消费者组）
@@ -149,6 +162,9 @@ jwt:
   # Token 有效期（如 1h / 24h）
   # 生产建议：短有效期 + 刷新机制（例如 15m~2h）
   expires_in: 1h
+  # 签发方 / 受众（生产必须显式配置；校验时拒绝 iss/aud 不匹配的令牌）
+  issuer: ad-platform
+  audience: ad-platform-api
 
 # 安全模块配置
 security:
@@ -160,20 +176,43 @@ security:
   # AES 密钥（用于数据加解密，生产必须设置）
   # 生产建议：使用 16/24/32 字节密钥并通过密钥管理服务下发
   aes_secret: ""
+  # HSTS max-age（秒）；仅当请求被判定为 HTTPS（TLS 或 X-Forwarded-Proto: https）时下发响应头；0 表示关闭
+  # 生产环境全站 HTTPS 时可设为 31536000（1 年）
+  hsts_max_age_seconds: 0
+  # 自动 IP 黑名单：爬取 UA、反复访问 /api/admin、登录/上报鉴权失败、常见探测路径等累计 strike 后封禁
+  ip_blacklist:
+    enabled: true
+    # 封禁时长；0 或未写且需永久时可配 0s（慎用）
+    ban_duration: 24h
+    # strike 统计滑动窗口
+    strike_window: 10m
+    # 窗口内累计权重达到该值则自动封禁
+    strikes_before_ban: 5
+    # 敏感路径上出现常见爬虫/脚本 UA 时额外计分
+    block_crawler_user_agent: true
+    crawler_strike_weight: 2
+    # 启动即生效的静态黑名单（可选）
+    static_ips: []
+    # 启动即生效的静态白名单（可选，不受自动封禁影响）
+    static_whitelist_ips: []
 
 # Prometheus 指标暴露配置
 metrics:
+  # 监听地址：127.0.0.1 仅本机；0.0.0.0 或不写表示所有网卡（配合防火墙）
+  host: 0.0.0.0
   # 指标服务端口
   # 生产建议：仅对 Prometheus 网段开放，不对公网暴露
   port: 9090
   # 指标抓取路径
   path: /metrics
+  # 非空时要求抓取请求携带 Authorization: Bearer <token>；也可用环境变量 METRICS_BEARER_TOKEN 覆盖
+  bearer_token: ""
 
 # 日志配置
 logging:
   # 日志级别：debug / info / warn / error
-  # 生产建议：使用 info（排障时短时调高）
-  level: debug
+  # 生产建议：info（当前 environment 为 production 时应避免长期 debug）
+  level: info
   # 日志格式：json / text
   format: json
   # 慢请求阈值（毫秒）
@@ -196,3 +235,9 @@ rate_limit:
   requests_per_second: 50.0
   # 突发请求桶容量
   burst: 200
+  # 以下两项同时大于 0 时，仅对 POST /api/login 追加一层限流（防爆破）；默认 0 表示不启用
+  # login_requests_per_second: 1
+  # login_burst: 12
+  # 以下两项同时大于 0 时，仅对 POST /api/register 追加限流；默认 0 表示不启用
+  # register_requests_per_second: 0.5
+  # register_burst: 8

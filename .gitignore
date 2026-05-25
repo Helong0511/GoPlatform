@@ -1,3 +1,18 @@
-.env
-admin/.env
-ubuntu/info.txt
+# 前端
+admin/node_modules/
+admin/dist/
+# Go / Rust 构建
+/ad-platform-main
+/ad-platform-main.exe
+*.exe
+bin/ad-platform
+rust-security/target/
+# IDE
+.cursor/
+.vscode/
+.idea/
+# 系统与日志
+*.log
+*.tmp
+.DS_Store
+Thumbs.db

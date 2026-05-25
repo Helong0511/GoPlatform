@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,46 +17,51 @@ import (
 
 // AdTask 广告任务模型
 type AdTask struct {
-	ID                  uint      `json:"id" gorm:"primaryKey"`
-	Name                string    `json:"name" gorm:"size:100;not null"`
-	Description         string    `json:"description" gorm:"type:text"`
-	ClientID            *uint     `json:"client_id" gorm:"index"`
-	Status              string    `json:"status" gorm:"size:20;default:'active';index"`
-	Priority            int       `json:"priority" gorm:"default:0;index"`
-	StartTime           time.Time `json:"start_time"`
-	EndTime             time.Time `json:"end_time"`
-	TargetAudience      string    `json:"target_audience" gorm:"type:jsonb"`
-	Creative            string    `json:"creative" gorm:"type:jsonb"`
-	Budget              float64   `json:"budget" gorm:"type:decimal(10,2)"`
-	ProxyStrategy       int       `json:"proxy_strategy" gorm:"default:1"`
-	BizType             int       `json:"biz_type" gorm:"default:1"`
-	Profile             string    `json:"profile" gorm:"size:50;default:'mobile'"`
-	Plat                string    `json:"plat" gorm:"size:50;default:'googlead';index"`
-	Cau                 int       `json:"cau" gorm:"default:0"`
-	Os                  int       `json:"os" gorm:"default:1;index"`
-	InterceptInfo       string    `json:"intercept_info" gorm:"type:jsonb"`
-	Landurl             string    `json:"landurl" gorm:"type:text"`
-	AllowCounty         string    `json:"allow_county" gorm:"type:jsonb"`
-	FinalDomains        string    `json:"final_domains" gorm:"type:jsonb"`
-	Info                string    `json:"info" gorm:"type:jsonb"`
-	UserQuality         string    `json:"user_quality" gorm:"type:jsonb"`
-	ClickHomeOffsetX    int       `json:"click_home_offset_x" gorm:"default:100"`
-	ClickHomeOffsetY    int       `json:"click_home_offset_y" gorm:"default:100"`
-	ClickResultOffsetX  int       `json:"click_result_offset_x" gorm:"default:100"`
-	ClickResultOffsetY  int       `json:"click_result_offset_y" gorm:"default:100"`
-	FKeyApi             string    `json:"f_key_api" gorm:"type:text"`
-	PlanID              *int      `json:"plan_id" gorm:"index"`
-	CreatedAt           time.Time `json:"created_at" gorm:"index"`
-	UpdatedAt           time.Time `json:"updated_at"`
-	LastAccessedAt      time.Time `json:"last_accessed_at" gorm:"default:CURRENT_TIMESTAMP;index"`
-	AccessCount         int       `json:"access_count" gorm:"default:0;index"`
+	ID                 uint      `json:"id" gorm:"primaryKey"`
+	Name               string    `json:"name" gorm:"size:100;not null"`
+	Description        string    `json:"description" gorm:"type:text"`
+	ClientID           *uint     `json:"client_id" gorm:"index"`
+	Status             string    `json:"status" gorm:"size:20;default:'active';index"`
+	Priority           int       `json:"priority" gorm:"default:0;index"`
+	StartTime          time.Time `json:"start_time"`
+	EndTime            time.Time `json:"end_time"`
+	TargetAudience     string    `json:"target_audience" gorm:"type:jsonb"`
+	Creative           string    `json:"creative" gorm:"type:jsonb"`
+	Budget             float64   `json:"budget" gorm:"type:decimal(10,2)"`
+	ProxyStrategy      int       `json:"proxy_strategy" gorm:"default:1"`
+	BizType            int       `json:"biz_type" gorm:"default:1"`
+	Profile            string    `json:"profile" gorm:"size:50;default:'mobile'"`
+	Platform           string    `json:"plat" gorm:"column:plat;size:50;default:'googlead';index"`
+	CAU                int       `json:"cau" gorm:"column:cau;default:0"`
+	OS                 int       `json:"os" gorm:"column:os;default:1;index"`
+	InterceptInfo      string    `json:"intercept_info" gorm:"type:jsonb"`
+	LandURL            string    `json:"landurl" gorm:"column:landurl;type:text"`
+	AllowCounty        string    `json:"allow_county" gorm:"type:jsonb"`
+	FinalDomains       string    `json:"final_domains" gorm:"type:jsonb"`
+	Info               string    `json:"info" gorm:"type:jsonb"`
+	UserQuality        string    `json:"user_quality" gorm:"type:jsonb"`
+	ClickHomeOffsetX   int       `json:"click_home_offset_x" gorm:"default:100"`
+	ClickHomeOffsetY   int       `json:"click_home_offset_y" gorm:"default:100"`
+	ClickResultOffsetX int       `json:"click_result_offset_x" gorm:"default:100"`
+	ClickResultOffsetY int       `json:"click_result_offset_y" gorm:"default:100"`
+	FKeyAPI            string    `json:"f_key_api" gorm:"column:f_key_api;type:text"`
+	PlanID             *int      `json:"plan_id" gorm:"index"`
+	CreatedAt          time.Time `json:"created_at" gorm:"index"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	LastAccessedAt     time.Time `json:"last_accessed_at" gorm:"default:CURRENT_TIMESTAMP;index"`
+	AccessCount        int       `json:"access_count" gorm:"default:0;index"`
+}
+
+type adCacheEntry struct {
+	task    *AdTask
+	expires time.Time
 }
 
 // AdService 广告服务
 type AdService struct {
 	db         *db.PostgresDB
 	redis      *redis.RedisClient
-	localCache map[string]*AdTask
+	localCache map[string]adCacheEntry
 	cacheMutex sync.RWMutex
 	cacheTTL   time.Duration
 }
@@ -65,7 +71,7 @@ func NewAdService(db *db.PostgresDB, redis *redis.RedisClient) *AdService {
 	return &AdService{
 		db:         db,
 		redis:      redis,
-		localCache: make(map[string]*AdTask),
+		localCache: make(map[string]adCacheEntry),
 		cacheTTL:   5 * time.Minute,
 	}
 }
@@ -75,9 +81,9 @@ func (s *AdService) GetAdTaskByID(id uint) (*AdTask, error) {
 	// 先从本地缓存获取
 	cacheKey := s.getCacheKey(id)
 	s.cacheMutex.RLock()
-	if ad, ok := s.localCache[cacheKey]; ok {
+	if entry, ok := s.localCache[cacheKey]; ok && time.Now().Before(entry.expires) {
 		s.cacheMutex.RUnlock()
-		return ad, nil
+		return entry.task, nil
 	}
 	s.cacheMutex.RUnlock()
 
@@ -88,7 +94,7 @@ func (s *AdService) GetAdTaskByID(id uint) (*AdTask, error) {
 		if err := json.Unmarshal([]byte(cachedAd), &ad); err == nil {
 			// 更新本地缓存
 			s.cacheMutex.Lock()
-			s.localCache[cacheKey] = &ad
+			s.localCache[cacheKey] = adCacheEntry{task: &ad, expires: time.Now().Add(s.cacheTTL)}
 			s.cacheMutex.Unlock()
 			return &ad, nil
 		}
@@ -137,6 +143,11 @@ func (s *AdService) ListAdTasks(page, pageSize int) ([]AdTask, int64, error) {
 
 // CreateAdTask 创建广告任务
 func (s *AdService) CreateAdTask(ad *AdTask) error {
+	ad.ID = 0
+	ad.AccessCount = 0
+	if strings.TrimSpace(ad.Status) == "" {
+		ad.Status = "active"
+	}
 	err := s.db.DB.Create(ad).Error
 	if err != nil {
 		return err
@@ -150,6 +161,14 @@ func (s *AdService) CreateAdTask(ad *AdTask) error {
 
 // UpdateAdTask 更新广告任务
 func (s *AdService) UpdateAdTask(ad *AdTask) error {
+	var existing AdTask
+	if err := s.db.DB.First(&existing, ad.ID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return common.ErrAdTaskNotFound
+		}
+		return err
+	}
+	ad.AccessCount = existing.AccessCount
 	err := s.db.DB.Save(ad).Error
 	if err != nil {
 		return err
@@ -163,9 +182,12 @@ func (s *AdService) UpdateAdTask(ad *AdTask) error {
 
 // DeleteAdTask 删除广告任务
 func (s *AdService) DeleteAdTask(id uint) error {
-	err := s.db.DB.Delete(&AdTask{}, id).Error
-	if err != nil {
-		return err
+	result := s.db.DB.Delete(&AdTask{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return common.ErrAdTaskNotFound
 	}
 
 	// 删除缓存
@@ -176,24 +198,6 @@ func (s *AdService) DeleteAdTask(id uint) error {
 	s.cacheMutex.Unlock()
 
 	return nil
-}
-
-// GetActiveAdTasks 获取活跃的广告任务
-func (s *AdService) GetActiveAdTasks() ([]AdTask, error) {
-	var ads []AdTask
-
-	// 从数据库获取活跃的广告任务，使用 UTC 标准时间
-	err := s.db.DB.Where("status = ? AND start_time <= ? AND end_time >= ?", "active", time.Now().UTC(), time.Now().UTC()).Order("priority desc").Find(&ads).Error
-	if err != nil {
-		return nil, err
-	}
-
-	// 更新缓存
-	for i := range ads {
-		s.updateCache(&ads[i])
-	}
-
-	return ads, nil
 }
 
 // ListActiveAdTasks 列出活跃的广告任务（支持分页、筛选和排序）
@@ -207,9 +211,6 @@ func (s *AdService) ListActiveAdTasks(page, pageSize int, filters map[string]int
 	// 应用筛选条件
 	if name, ok := filters["name"].(string); ok && name != "" {
 		query = query.Where("name LIKE ?", "%"+name+"%")
-	}
-	if status, ok := filters["status"].(string); ok && status != "" {
-		query = query.Where("status = ?", status)
 	}
 	if startTime, ok := filters["start_time"].(time.Time); ok {
 		query = query.Where("start_time >= ?", startTime)
@@ -268,7 +269,7 @@ func (s *AdService) updateCache(ad *AdTask) {
 
 	// 更新本地缓存
 	s.cacheMutex.Lock()
-	s.localCache[cacheKey] = ad
+	s.localCache[cacheKey] = adCacheEntry{task: ad, expires: time.Now().Add(s.cacheTTL)}
 	s.cacheMutex.Unlock()
 }
 

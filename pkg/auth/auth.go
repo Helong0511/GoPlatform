@@ -15,42 +15,72 @@ import (
 
 // Claims JWT声明结构
 type Claims struct {
-	UserID   string `json:"user_id"`
-	Role     string `json:"role"`
-	Timezone string `json:"timezone"`
+	UserID   string   `json:"user_id"`
+	Role     string   `json:"role"`            // 兼容旧客户端：首个角色名，与 Roles[0] 一致
+	Roles    []string `json:"roles,omitempty"` // 全部角色名（去重、保持顺序）
+	Timezone string   `json:"timezone"`
 	jwt.RegisteredClaims
 }
 
 // AuthMiddleware 认证中间件管理器
 type AuthMiddleware struct {
 	jwtSecret string
+	issuer    string
+	audience  string
 }
 
-// NewAuthMiddleware 创建认证中间件管理器
-func NewAuthMiddleware(jwtSecret string) *AuthMiddleware {
+// NewAuthMiddleware 创建认证中间件管理器；issuer/audience 为空时不校验对应声明。
+func NewAuthMiddleware(jwtSecret, issuer, audience string) *AuthMiddleware {
 	return &AuthMiddleware{
-		jwtSecret: jwtSecret,
+		jwtSecret: strings.TrimSpace(jwtSecret),
+		issuer:    strings.TrimSpace(issuer),
+		audience:  strings.TrimSpace(audience),
 	}
 }
 
-// GenerateJWT 生成JWT令牌
-func (a *AuthMiddleware) GenerateJWT(userID, role, timezone string, exp time.Duration) (string, error) {
+// GenerateJWT 生成 JWT；roleNames 为全部角色名（首个写入 role 声明便于旧解析逻辑）。
+func (a *AuthMiddleware) GenerateJWT(userID, timezone string, roleNames []string, exp time.Duration) (string, error) {
+	primary := ""
+	if len(roleNames) > 0 {
+		primary = roleNames[0]
+	}
+	now := time.Now().UTC()
+	rc := jwt.RegisteredClaims{
+		ExpiresAt: jwt.NewNumericDate(now.Add(exp)),
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
+	}
+	if a.issuer != "" {
+		rc.Issuer = a.issuer
+	}
+	if a.audience != "" {
+		rc.Audience = jwt.ClaimStrings{a.audience}
+	}
+
 	claims := Claims{
-		UserID:   userID,
-		Role:     role,
-		Timezone: timezone,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(exp)),
-			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-			NotBefore: jwt.NewNumericDate(time.Now().UTC()),
-		},
+		UserID:           userID,
+		Role:             primary,
+		Roles:            roleNames,
+		Timezone:         timezone,
+		RegisteredClaims: rc,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(a.jwtSecret))
 }
 
-// ValidateJWT 验证JWT令牌
+func (a *AuthMiddleware) parseOptions() []jwt.ParserOption {
+	opts := make([]jwt.ParserOption, 0, 2)
+	if a.issuer != "" {
+		opts = append(opts, jwt.WithIssuer(a.issuer))
+	}
+	if a.audience != "" {
+		opts = append(opts, jwt.WithAudience(a.audience))
+	}
+	return opts
+}
+
+// ValidateJWT 验证JWT令牌（含 iss/aud 与 HMAC 算法白名单）
 func (a *AuthMiddleware) ValidateJWT(tokenString string) (*Claims, error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -58,7 +88,7 @@ func (a *AuthMiddleware) ValidateJWT(tokenString string) (*Claims, error) {
 			return nil, errors.New("unexpected signing method")
 		}
 		return []byte(a.jwtSecret), nil
-	})
+	}, a.parseOptions()...)
 
 	if err != nil || !token.Valid {
 		return nil, errors.New("invalid or expired token")
@@ -78,7 +108,6 @@ func (a *AuthMiddleware) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// 严格要求 Bearer 前缀，避免兼容模式带来的歧义
 		if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
 			response.SetErrorReason(c, response.ReasonInvalidBearerFormat)
 			response.Unauthorized(c, response.MsgBearerFormatRequired)
@@ -93,7 +122,6 @@ func (a *AuthMiddleware) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// 解析token
 		claims, err := a.ValidateJWT(tokenString)
 		if err != nil {
 			response.SetErrorReason(c, response.ReasonInvalidOrExpiredToken)
@@ -102,9 +130,18 @@ func (a *AuthMiddleware) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// 将用户信息存入上下文
+		roleNames := append([]string{}, claims.Roles...)
+		if len(roleNames) == 0 && strings.TrimSpace(claims.Role) != "" {
+			roleNames = []string{strings.TrimSpace(claims.Role)}
+		}
+		primary := strings.TrimSpace(claims.Role)
+		if primary == "" && len(roleNames) > 0 {
+			primary = roleNames[0]
+		}
+
 		c.Set("user_id", claims.UserID)
-		c.Set("role", claims.Role)
+		c.Set("role", primary)
+		c.Set("roles", roleNames)
 		c.Set("timezone", claims.Timezone)
 
 		c.Next()
@@ -135,6 +172,23 @@ func GetRoleFromContext(c *gin.Context) (string, bool) {
 		return "", false
 	}
 	return roleStr, true
+}
+
+// GetRolesFromContext 从上下文中获取全部角色名（可能为空切片）。
+func GetRolesFromContext(c *gin.Context) ([]string, bool) {
+	v, exists := c.Get("roles")
+	if !exists {
+		if r, ok := GetRoleFromContext(c); ok && r != "" {
+			return []string{r}, true
+		}
+		return nil, false
+	}
+	switch x := v.(type) {
+	case []string:
+		return x, true
+	default:
+		return nil, false
+	}
 }
 
 // GetTimezoneFromContext 从上下文中获取时区

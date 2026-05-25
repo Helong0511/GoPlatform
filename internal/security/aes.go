@@ -10,8 +10,8 @@ import (
 	"io"
 )
 
-// AESUtils AES-256-GCM 加密工具
- type AESUtils struct {
+// AESUtils AES-GCM 加密工具（密钥 16/24/32 字节，对应 AES-128/192/256）
+type AESUtils struct {
 	Key []byte
 }
 
@@ -21,13 +21,13 @@ func NewAESUtils(keyBase64 string) (*AESUtils, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 验证密钥长度是否为AES标准长度（16/24/32字节）
 	keyLen := len(key)
 	if keyLen != 16 && keyLen != 24 && keyLen != 32 {
 		return nil, errors.New("invalid AES key length: must be 16, 24, or 32 bytes")
 	}
-	
+
 	return &AESUtils{Key: key}, nil
 }
 

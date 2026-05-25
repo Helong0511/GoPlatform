@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,6 +33,13 @@ import (
 func main() {
 	logger.Init("info", "json")
 	logger.S().Info("starting AD Platform Main Service")
+
+	dotenvPath, dotenvErr := util.LoadDotEnvFiles()
+	if dotenvErr != nil {
+		logger.S().Warn("failed to load .env file", "error", dotenvErr)
+	} else if dotenvPath != "" {
+		logger.S().Info("loaded environment from dotenv file", "path", dotenvPath)
+	}
 
 	// 加载配置
 	configPath, err := resolveConfigPath()
@@ -66,8 +74,13 @@ func main() {
 	logger.S().Info("configuration validated successfully")
 
 	// 启动监控服务器
-	logger.S().Info("starting metrics server", "port", config.Metrics.Port, "path", config.Metrics.Path)
-	metrics.StartServer(config.Metrics.Port, config.Metrics.Path)
+	logger.S().Info("starting metrics server",
+		"host", config.Metrics.Host,
+		"port", config.Metrics.Port,
+		"path", config.Metrics.Path,
+		"bearer_auth", strings.TrimSpace(config.Metrics.BearerToken) != "",
+	)
+	metricsSrv := metrics.StartServer(config.Metrics.Host, config.Metrics.Port, config.Metrics.Path, config.Metrics.BearerToken)
 	logger.S().Info("metrics server started")
 
 	// 初始化数据库
@@ -89,34 +102,59 @@ func main() {
 	}
 	logger.S().Info("redis initialized")
 
-	// 初始化 Pulsar
-	logger.S().Info("initializing pulsar")
-	var pulsarProducer *pulsar.PulsarProducer = nil
-
-	logger.S().Info("skipping pulsar initialization for development")
+	// 初始化 Pulsar（url 为空则跳过，便于无消息队列环境）
+	var pulsarProducer *pulsar.PulsarProducer
+	var pulsarConsumer *pulsar.PulsarConsumer
+	if pulsarURL := strings.TrimSpace(config.Pulsar.URL); pulsarURL != "" {
+		logger.S().Info("initializing pulsar", "url", pulsarURL)
+		pulsarProducer, err = pulsar.NewPulsarProducer(pulsarURL, config.Pulsar.Topic)
+		if err != nil {
+			if util.IsProductionEnvironment(config.Environment) {
+				logger.S().Error("failed to initialize pulsar producer in production", "error", err)
+				os.Exit(1)
+			}
+			logger.S().Warn("failed to initialize pulsar producer, running without queue", "error", err)
+			pulsarProducer = nil
+		} else {
+			pulsarConsumer, err = pulsar.NewPulsarConsumer(pulsarURL, config.Pulsar.Topic, config.Pulsar.Subscription)
+			if err != nil {
+				pulsarProducer.Close()
+				pulsarProducer = nil
+				if util.IsProductionEnvironment(config.Environment) {
+					logger.S().Error("failed to initialize pulsar consumer in production", "error", err)
+					os.Exit(1)
+				}
+				logger.S().Warn("failed to initialize pulsar consumer, running without queue", "error", err)
+			} else {
+				logger.S().Info("pulsar producer and consumer initialized")
+			}
+		}
+	} else {
+		logger.S().Info("pulsar url empty, skipping message queue")
+	}
 
 	// 初始化安全管理器
 	logger.S().Info("initializing security manager")
 	securityManager, err := security.NewSecurityManager(config.Security.RustLibPath)
 	if err != nil {
-		logger.S().Warn("failed to initialize security manager, using fallback", "error", err)
-		// 使用默认的安全管理器
-		securityManager = &security.SecurityManager{}
+		logger.S().Error("failed to initialize security manager", "error", err)
+		os.Exit(1)
 	}
 	logger.S().Info("security manager initialized")
 
 	// 初始化服务
 	logger.S().Info("initializing services")
-	userService := admin.NewUserService(dbInstance, redisClient)
+	userService := admin.NewUserService(dbInstance, redisClient, config.Auth.MinPasswordLength)
 	roleService := admin.NewRoleService(dbInstance)
 	departmentService := admin.NewDepartmentService(dbInstance)
 	adService := ad.NewAdService(dbInstance, redisClient)
 	reportService := report.NewReportService(dbInstance, pulsarProducer)
 	logger.S().Info("services initialized")
 
-	// 启动 Pulsar 消费者
-	// 由于在开发模式下跳过了 Pulsar 初始化，这里直接跳过消费者启动
-	logger.S().Info("skipping pulsar consumer startup")
+	if pulsarConsumer != nil {
+		go reportService.ConsumeReports(pulsarConsumer)
+		logger.S().Info("pulsar consumer started")
+	}
 
 	// 初始化速率限制器
 	logger.S().Info("initializing rate limiter")
@@ -128,6 +166,32 @@ func main() {
 		"requests_per_second", config.RateLimit.RequestsPerSecond,
 		"burst", config.RateLimit.Burst,
 	)
+
+	var loginRateMiddleware gin.HandlerFunc
+	if config.RateLimit.LoginRequestsPerSecond > 0 {
+		loginRL := middleware.NewRateLimiter(
+			rate.Limit(config.RateLimit.LoginRequestsPerSecond),
+			config.RateLimit.LoginBurst,
+		)
+		loginRateMiddleware = loginRL.RateLimitMiddleware()
+		logger.S().Info("login rate limiter enabled",
+			"login_requests_per_second", config.RateLimit.LoginRequestsPerSecond,
+			"login_burst", config.RateLimit.LoginBurst,
+		)
+	}
+
+	var registerRateMiddleware gin.HandlerFunc
+	if config.RateLimit.RegisterRequestsPerSecond > 0 {
+		regRL := middleware.NewRateLimiter(
+			rate.Limit(config.RateLimit.RegisterRequestsPerSecond),
+			config.RateLimit.RegisterBurst,
+		)
+		registerRateMiddleware = regRL.RateLimitMiddleware()
+		logger.S().Info("register rate limiter enabled",
+			"register_requests_per_second", config.RateLimit.RegisterRequestsPerSecond,
+			"register_burst", config.RateLimit.RegisterBurst,
+		)
+	}
 
 	aesSecret, aesSource, err := util.ResolveSecret(util.EnvAESSecretKey, config.Security.AESSecret)
 	if err != nil {
@@ -142,6 +206,14 @@ func main() {
 		os.Exit(1)
 	}
 	logger.S().Info("JWT secret loaded", "source", jwtSource)
+
+	if util.IsStrictHardeningEnvironment(config.Environment) {
+		if err := util.ValidateProductionSecrets(jwtSecret, aesSecret); err != nil {
+			logger.S().Error("strict environment secret validation failed", "error", err, "env", config.Environment)
+			os.Exit(1)
+		}
+		logger.S().Info("strict environment secret strength validated", "env", config.Environment)
+	}
 
 	jwtExpiresIn, err := time.ParseDuration(config.JWT.ExpiresIn)
 	if err != nil {
@@ -163,9 +235,77 @@ func main() {
 		serverTimeout = 30 * time.Second
 	}
 
+	shutdownTimeout, err := time.ParseDuration(config.Server.ShutdownTimeout)
+	if err != nil {
+		logger.S().Warn("invalid shutdown_timeout, fallback to 15s", "error", err)
+		shutdownTimeout = 15 * time.Second
+	}
+	maxBodyBytes := int64(config.Server.MaxRequestBodyMB) * 1024 * 1024
+
+	readinessCheck := func(ctx context.Context) error {
+		sqlDB, err := dbInstance.DB.DB()
+		if err != nil {
+			return err
+		}
+		if err := sqlDB.PingContext(ctx); err != nil {
+			return err
+		}
+		if redisClient.Client != nil {
+			if err := redisClient.Client.Ping(ctx).Err(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	ipGuardOpts, err := middleware.ParseIPGuardOptions(middleware.IPBlacklistYAML{
+		Enabled:               config.Security.IPBlacklist.Enabled,
+		BanDuration:           config.Security.IPBlacklist.BanDuration,
+		StrikeWindow:          config.Security.IPBlacklist.StrikeWindow,
+		StrikesBeforeBan:      config.Security.IPBlacklist.StrikesBeforeBan,
+		BlockCrawlerUserAgent: config.Security.IPBlacklist.BlockCrawlerUserAgent,
+		CrawlerStrikeWeight:   config.Security.IPBlacklist.CrawlerStrikeWeight,
+		StaticIPs:             config.Security.IPBlacklist.StaticIPs,
+		StaticWhitelistIPs:    config.Security.IPBlacklist.StaticWhitelistIPs,
+	})
+	if err != nil {
+		logger.S().Error("invalid ip blacklist configuration", "error", err)
+		os.Exit(1)
+	}
+	ipGuard := middleware.NewIPGuard(ipGuardOpts, redisClient)
+
+	configStore := util.NewConfigStore(configPath, dotenvPath)
+	configStore.RegisterHotReload("security.ip_blacklist", func(cfg *util.Config) error {
+		opts, err := middleware.ParseIPGuardOptions(middleware.IPBlacklistYAML{
+			Enabled:               cfg.Security.IPBlacklist.Enabled,
+			BanDuration:           cfg.Security.IPBlacklist.BanDuration,
+			StrikeWindow:          cfg.Security.IPBlacklist.StrikeWindow,
+			StrikesBeforeBan:      cfg.Security.IPBlacklist.StrikesBeforeBan,
+			BlockCrawlerUserAgent: cfg.Security.IPBlacklist.BlockCrawlerUserAgent,
+			CrawlerStrikeWeight:   cfg.Security.IPBlacklist.CrawlerStrikeWeight,
+			StaticIPs:             cfg.Security.IPBlacklist.StaticIPs,
+			StaticWhitelistIPs:    cfg.Security.IPBlacklist.StaticWhitelistIPs,
+		})
+		if err != nil {
+			return err
+		}
+		ipGuard.ApplyOptions(opts)
+		return nil
+	})
+
+	if ipGuard.Enabled() {
+		logger.S().Info("ip blacklist guard enabled",
+			"ban_duration", ipGuardOpts.BanDuration.String(),
+			"strike_window", ipGuardOpts.StrikeWindow.String(),
+			"strikes_before_ban", ipGuardOpts.StrikesBeforeBan,
+		)
+	} else {
+		logger.S().Info("ip blacklist guard disabled")
+	}
+
 	// 初始化路由
 	logger.S().Info("initializing router")
-	router, err := api.NewRouter(
+	router := api.NewRouter(
 		userService,
 		roleService,
 		departmentService,
@@ -173,26 +313,44 @@ func main() {
 		reportService,
 		securityManager,
 		jwtSecret,
+		config.JWT.Issuer,
+		config.JWT.Audience,
 		jwtExpiresIn,
 		config.PublicRegisterEnabled(),
-		aesSecret,
 		emailSender,
+		readinessCheck,
+		registerRateMiddleware,
+		loginRateMiddleware,
+		ipGuard,
+		configStore,
 	)
-	if err != nil {
-		logger.S().Error("failed to initialize router", "error", err)
-		os.Exit(1)
-	}
 	logger.S().Info("router initialized")
+
+	if util.IsProductionEnvironment(config.Environment) {
+		gin.SetMode(gin.ReleaseMode)
+		logger.S().Info("gin mode set to release (production)")
+	}
 
 	// 创建 Gin 引擎
 	logger.S().Info("creating Gin engine")
 	engine := gin.New()
+	if len(config.Server.TrustedProxies) > 0 {
+		if err := engine.SetTrustedProxies(config.Server.TrustedProxies); err != nil {
+			logger.S().Error("invalid server.trusted_proxies", "error", err)
+			os.Exit(1)
+		}
+		logger.S().Info("gin trusted proxies configured", "count", len(config.Server.TrustedProxies))
+	}
+	trustForwardedProto := len(config.Server.TrustedProxies) > 0
 	engine.Use(
+		logger.RecoveryMiddleware(),
+		middleware.BlockUnsafeHTTPMethods(),
 		logger.RequestIDMiddleware(),
+		middleware.MaxRequestBodyBytes(maxBodyBytes),
+		middleware.SecurityHeadersMiddleware(config.Security.HSTSMaxAgeSeconds, trustForwardedProto),
 		logger.AccessLogMiddlewareWithOptions(logger.AccessLogOptions{
 			SlowRequestThreshold: time.Duration(config.Logging.SlowRequestMS) * time.Millisecond,
 		}),
-		logger.RecoveryMiddleware(),
 	)
 	logger.S().Info("Gin engine created with custom logging middlewares")
 
@@ -201,12 +359,17 @@ func main() {
 	engine.Use(cors.New(cors.Config{
 		AllowOrigins:     config.CORS.AllowOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-API-Key", "X-Lang", "Accept-Language"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
 	logger.S().Info("CORS configured")
+
+	if ipGuard.Enabled() {
+		engine.Use(ipGuard.Middleware())
+		logger.S().Info("ip blacklist middleware enabled")
+	}
 
 	// 启用速率限制
 	logger.S().Info("enabling rate limit")
@@ -245,11 +408,6 @@ func main() {
 		}
 	}()
 
-	// 等待服务器启动
-	logger.S().Info("server starting")
-	time.Sleep(2 * time.Second)
-	logger.S().Info("server startup completed")
-
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -257,7 +415,7 @@ func main() {
 	logger.S().Info("shutting down server")
 
 	// 优雅关闭
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
@@ -265,9 +423,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	if metricsSrv != nil {
+		mDur := 5 * time.Second
+		if shutdownTimeout < mDur {
+			mDur = shutdownTimeout
+		}
+		mctx, mcancel := context.WithTimeout(context.Background(), mDur)
+		if err := metricsSrv.Shutdown(mctx); err != nil {
+			logger.S().Warn("metrics server shutdown", "error", err)
+		}
+		mcancel()
+	}
+
 	// 关闭服务
 	reportService.Close()
-	// 由于在开发模式下跳过了 Pulsar 初始化，这里直接跳过关闭操作
+	if pulsarConsumer != nil {
+		pulsarConsumer.Close()
+	}
+	if pulsarProducer != nil {
+		pulsarProducer.Close()
+	}
 	redisClient.Close()
 	dbInstance.Close()
 	securityManager.Close()

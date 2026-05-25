@@ -17,6 +17,8 @@ var (
 	ErrDuplicateEntry     = errors.New("duplicate entry")
 	ErrForbidden          = errors.New("forbidden")
 	ErrInvalidArgument    = errors.New("invalid argument")
+	ErrWeakPassword                = errors.New("password does not meet policy")
+	ErrRegistrationAlreadyReviewed = errors.New("registration already reviewed")
 )
 
 func IsDuplicateEntryError(err error) bool {

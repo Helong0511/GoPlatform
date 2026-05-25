@@ -1,0 +1,56 @@
+GoPlatform 对外接口速查（下游 / 管理端）
+
+=== 下游（需 X-API-Key，scope report:write）===
+
+POST /api/report
+  Header: X-API-Key: <密钥>
+  Body: JSON 明文 AdReport 字段（action 必填）
+  说明: 广告执行数据上报；不再提供 /upWebTask、/getWebTask
+
+=== 公开（无需登录）===
+
+POST /api/login
+  Body: { "username", "password" }
+  响应: token + user（roles 为角色名数组）
+
+POST /api/register
+  仅当 allow_public_register 开启
+  Body: { "username", "email" }
+
+GET  /health
+GET  /health/live
+GET  /health/ready   （配置 readiness 时）
+
+=== 管理端（Bearer JWT + RBAC）===
+
+前缀: /api/admin
+  用户/角色/部门/客户/广告任务/报表 等，见 api/routes.go
+
+广告管理示例:
+  GET  /api/admin/ads/active
+  POST /api/admin/ads
+  POST /api/admin/reports/batch
+
+系统配置（需 user:read / user:update）:
+  GET  /api/admin/system/config
+  PUT  /api/admin/system/config       Body: { "config": { ... }, "secrets": { ... }? }
+  POST /api/admin/system/config/apply-hot
+  说明: 读写 config.yaml；密钥脱敏为 ***；环境变量覆盖项见响应 env_overrides；
+        IP 黑名单等可热更新，其余多数需 systemctl restart
+
+IP 访问控制（需 user:read / user:update）:
+  GET    /api/admin/system/ip-access/status
+  GET    /api/admin/system/ip-blacklist
+  POST   /api/admin/system/ip-blacklist       Body: { "ip", "reason"? }
+  DELETE /api/admin/system/ip-blacklist/{ip}  （IPv6 请 URL 编码）
+  GET    /api/admin/system/ip-whitelist
+  POST   /api/admin/system/ip-whitelist       Body: { "ip", "remark"? }
+  DELETE /api/admin/system/ip-whitelist/{ip}
+
+配置: config.yaml → security.ip_blacklist（enabled、ban_duration、static_ips、static_whitelist_ips）
+SQL:  sql/ip_blacklist_*.sql、sql/ip_whitelist_*.sql；MySQL 全量见 init_db_mysql.sql
+
+=== 已移除（勿再对接）===
+
+POST /api/getWebTask
+POST /upWebTask

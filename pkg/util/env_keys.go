@@ -24,6 +24,10 @@ const (
 	EnvEmailUsername           = "EMAIL_USERNAME"
 	EnvEmailPassword           = "EMAIL_PASSWORD"
 	EnvEmailFrom               = "EMAIL_FROM"
+	// EnvMetricsBearerToken 非空时覆盖配置文件 metrics.bearer_token（Prometheus 抓取需带 Authorization: Bearer）
+	EnvMetricsBearerToken = "METRICS_BEARER_TOKEN"
+	// EnvTrustedProxies 逗号分隔 CIDR 或 IP，覆盖 server.trusted_proxies（用于 X-Forwarded-For 下的 ClientIP）
+	EnvTrustedProxies = "TRUSTED_PROXIES"
 )
 
 // GetEnvTrim 返回去除首尾空白后的环境变量值。

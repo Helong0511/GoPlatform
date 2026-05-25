@@ -45,12 +45,28 @@ type UserRegistrationAudit struct {
 }
 
 type RegistrationReviewResult struct {
-	RegistrationID uint   `json:"registration_id"`
-	Approved       bool   `json:"approved"`
-	Username       string `json:"username"`
-	Email          string `json:"email"`
-	Password       string `json:"password,omitempty"`
-	APIKey         string `json:"api_key,omitempty"`
+	RegistrationID  uint   `json:"registration_id"`
+	Approved        bool   `json:"approved"`
+	Username        string `json:"username"`
+	Email           string `json:"email"`
+	initialPassword string `json:"-"`
+	apiKey          string `json:"-"`
+}
+
+// InitialPassword 审核通过时生成的初始密码（仅用于邮件等离线路径，勿写入 HTTP 响应）。
+func (r *RegistrationReviewResult) InitialPassword() string {
+	if r == nil {
+		return ""
+	}
+	return r.initialPassword
+}
+
+// APIKey 审核通过时生成的一次性 API Key（仅用于邮件等离线路径，勿写入 HTTP 响应）。
+func (r *RegistrationReviewResult) APIKey() string {
+	if r == nil {
+		return ""
+	}
+	return r.apiKey
 }
 
 type UserAPIKey struct {
@@ -133,7 +149,7 @@ func (s *UserService) ReviewRegistration(registrationID, operatorID uint, approv
 			return err
 		}
 		if reg.Status != RegistrationStatusPending {
-			return fmt.Errorf("registration already reviewed")
+			return common.ErrRegistrationAlreadyReviewed
 		}
 
 		now := time.Now().UTC()
@@ -200,7 +216,7 @@ func (s *UserService) ReviewRegistration(registrationID, operatorID uint, approv
 			UserID:  user.ID,
 			KeyHash: apiKeyHash,
 			Name:    "default",
-			Scope:   "task:read,report:write",
+			Scope:   "report:write",
 			Status:  true,
 		}).Error; err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
@@ -209,8 +225,8 @@ func (s *UserService) ReviewRegistration(registrationID, operatorID uint, approv
 			return err
 		}
 
-		result.Password = password
-		result.APIKey = apiKey
+		result.initialPassword = password
+		result.apiKey = apiKey
 		return nil
 	})
 	if err != nil {

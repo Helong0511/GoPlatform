@@ -1,14 +1,13 @@
 package ad
 
 import (
-	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	ad "ad-platform/internal/ad"
 	"ad-platform/internal/common"
-	"ad-platform/internal/security"
 	"ad-platform/pkg/middleware"
 	"ad-platform/pkg/response"
 	"ad-platform/pkg/util"
@@ -19,27 +18,17 @@ import (
 // AdHandler 广告管理处理器
 type AdHandler struct {
 	adService *ad.AdService
-	aesUtils  *security.AESUtils
 }
 
 // NewAdHandler 创建广告处理器
-func NewAdHandler(adService *ad.AdService, aesUtils *security.AESUtils) *AdHandler {
+func NewAdHandler(adService *ad.AdService) *AdHandler {
 	return &AdHandler{
 		adService: adService,
-		aesUtils:  aesUtils,
 	}
 }
 
-// SetupRoutes 设置广告相关路由
-func (h *AdHandler) SetupRoutes(engine *gin.Engine, public *gin.RouterGroup, protected *gin.RouterGroup, apiKeyGuard ...gin.HandlerFunc) {
-	// 公开接口 - 只支持POST
-	if len(apiKeyGuard) > 0 && apiKeyGuard[0] != nil {
-		public.POST("/getWebTask", apiKeyGuard[0], h.getAds)
-	} else {
-		public.POST("/getWebTask", h.getAds)
-	}
-
-	// 广告管理
+// SetupRoutes 设置广告管理路由（仅管理端）
+func (h *AdHandler) SetupRoutes(protected *gin.RouterGroup) {
 	ads := protected.Group("/ads")
 	{
 		ads.GET("", middleware.RBACMiddleware("ad:read"), h.listAdTasks)
@@ -51,8 +40,75 @@ func (h *AdHandler) SetupRoutes(engine *gin.Engine, public *gin.RouterGroup, pro
 	}
 }
 
+type adTaskWriteRequest struct {
+	Name               string    `json:"name" binding:"required"`
+	Description        string    `json:"description"`
+	ClientID           *uint     `json:"client_id"`
+	Status             string    `json:"status"`
+	Priority           int       `json:"priority"`
+	StartTime          time.Time `json:"start_time" binding:"required"`
+	EndTime            time.Time `json:"end_time" binding:"required"`
+	TargetAudience     string    `json:"target_audience"`
+	Creative           string    `json:"creative"`
+	Budget             float64   `json:"budget"`
+	ProxyStrategy      int       `json:"proxy_strategy"`
+	BizType            int       `json:"biz_type"`
+	Profile            string    `json:"profile"`
+	Platform           string    `json:"plat"`
+	CAU                int       `json:"cau"`
+	OS                 int       `json:"os"`
+	InterceptInfo      string    `json:"intercept_info"`
+	LandURL            string    `json:"landurl"`
+	AllowCounty        string    `json:"allow_county"`
+	FinalDomains       string    `json:"final_domains"`
+	Info               string    `json:"info"`
+	UserQuality        string    `json:"user_quality"`
+	ClickHomeOffsetX   int       `json:"click_home_offset_x"`
+	ClickHomeOffsetY   int       `json:"click_home_offset_y"`
+	ClickResultOffsetX int       `json:"click_result_offset_x"`
+	ClickResultOffsetY int       `json:"click_result_offset_y"`
+	FKeyAPI            string    `json:"f_key_api"`
+	PlanID             *int      `json:"plan_id"`
+}
+
+func (req *adTaskWriteRequest) toAdTask() *ad.AdTask {
+	return &ad.AdTask{
+		Name:               req.Name,
+		Description:        req.Description,
+		ClientID:           req.ClientID,
+		Status:             req.Status,
+		Priority:           req.Priority,
+		StartTime:          req.StartTime.UTC(),
+		EndTime:            req.EndTime.UTC(),
+		TargetAudience:     req.TargetAudience,
+		Creative:           req.Creative,
+		Budget:             req.Budget,
+		ProxyStrategy:      req.ProxyStrategy,
+		BizType:            req.BizType,
+		Profile:            req.Profile,
+		Platform:           req.Platform,
+		CAU:                req.CAU,
+		OS:                 req.OS,
+		InterceptInfo:      req.InterceptInfo,
+		LandURL:            req.LandURL,
+		AllowCounty:        req.AllowCounty,
+		FinalDomains:       req.FinalDomains,
+		Info:               req.Info,
+		UserQuality:        req.UserQuality,
+		ClickHomeOffsetX:   req.ClickHomeOffsetX,
+		ClickHomeOffsetY:   req.ClickHomeOffsetY,
+		ClickResultOffsetX: req.ClickResultOffsetX,
+		ClickResultOffsetY: req.ClickResultOffsetY,
+		FKeyAPI:            req.FKeyAPI,
+		PlanID:             req.PlanID,
+	}
+}
+
+func validateAdTaskTimes(start, end time.Time) bool {
+	return !start.IsZero() && !end.IsZero() && !end.Before(start)
+}
+
 // listAdTasks 列出广告任务
-// 后端只返回UTC标准时间，前端负责时区转换
 func (h *AdHandler) listAdTasks(c *gin.Context) {
 	page, pageSize := util.ParsePaginationQuery(
 		c.DefaultQuery("page", "1"),
@@ -65,12 +121,10 @@ func (h *AdHandler) listAdTasks(c *gin.Context) {
 		return
 	}
 
-	// 后端只返回UTC标准时间，不进行时区转换
 	response.SuccessPaginated(c, response.MsgAdTasksRetrievedSuccessfully, ads, total, page, pageSize)
 }
 
 // getAdTask 获取广告任务
-// 后端只返回UTC标准时间，前端负责时区转换
 func (h *AdHandler) getAdTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -88,56 +142,31 @@ func (h *AdHandler) getAdTask(c *gin.Context) {
 		return
 	}
 
-	// 后端只返回UTC标准时间，不进行时区转换
 	response.SuccessData(c, response.MsgAdTaskRetrievedSuccessfully, adTask)
 }
 
 // createAdTask 创建广告任务
-// 前端传入UTC标准时间，后端直接保存
 func (h *AdHandler) createAdTask(c *gin.Context) {
-	var adTask ad.AdTask
-	if err := c.ShouldBindJSON(&adTask); err != nil {
+	var req adTaskWriteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, response.MsgInvalidAdTaskData)
 		return
 	}
-
-	// 验证必填字段
-	if adTask.Name == "" {
-		response.BadRequest(c, response.MsgAdNameRequired)
-		return
-	}
-	if adTask.StartTime.IsZero() {
-		response.BadRequest(c, response.MsgStartTimeRequired)
-		return
-	}
-	if adTask.EndTime.IsZero() {
-		response.BadRequest(c, response.MsgEndTimeRequired)
-		return
-	}
-	if adTask.EndTime.Before(adTask.StartTime) {
+	if !validateAdTaskTimes(req.StartTime, req.EndTime) {
 		response.BadRequest(c, response.MsgEndTimeAfterStartRequired)
 		return
 	}
 
-	// 前端传入的是 UTC 标准时间，直接保存
-	if !adTask.StartTime.IsZero() {
-		adTask.StartTime = adTask.StartTime.UTC()
-	}
-	if !adTask.EndTime.IsZero() {
-		adTask.EndTime = adTask.EndTime.UTC()
-	}
-
-	if err := h.adService.CreateAdTask(&adTask); err != nil {
+	adTask := req.toAdTask()
+	if err := h.adService.CreateAdTask(adTask); err != nil {
 		response.InternalServerError(c, response.MsgFailedCreateAdTask)
 		return
 	}
 
-	// 后端只返回UTC标准时间，不进行时区转换
 	response.Created(c, response.MsgAdTaskCreatedSuccessfully, adTask)
 }
 
 // updateAdTask 更新广告任务
-// 前端传入UTC标准时间，后端直接保存
 func (h *AdHandler) updateAdTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -145,45 +174,27 @@ func (h *AdHandler) updateAdTask(c *gin.Context) {
 		return
 	}
 
-	var adTask ad.AdTask
-	if err := c.ShouldBindJSON(&adTask); err != nil {
+	var req adTaskWriteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, response.MsgInvalidAdTaskData)
 		return
 	}
-
-	// 验证必填字段
-	if adTask.Name == "" {
-		response.BadRequest(c, response.MsgAdNameRequired)
-		return
-	}
-	if adTask.StartTime.IsZero() {
-		response.BadRequest(c, response.MsgStartTimeRequired)
-		return
-	}
-	if adTask.EndTime.IsZero() {
-		response.BadRequest(c, response.MsgEndTimeRequired)
-		return
-	}
-	if adTask.EndTime.Before(adTask.StartTime) {
+	if !validateAdTaskTimes(req.StartTime, req.EndTime) {
 		response.BadRequest(c, response.MsgEndTimeAfterStartRequired)
 		return
 	}
 
-	// 前端传入的是 UTC 标准时间，直接保存
-	if !adTask.StartTime.IsZero() {
-		adTask.StartTime = adTask.StartTime.UTC()
-	}
-	if !adTask.EndTime.IsZero() {
-		adTask.EndTime = adTask.EndTime.UTC()
-	}
-
+	adTask := req.toAdTask()
 	adTask.ID = uint(id)
-	if err := h.adService.UpdateAdTask(&adTask); err != nil {
+	if err := h.adService.UpdateAdTask(adTask); err != nil {
+		if errors.Is(err, common.ErrAdTaskNotFound) {
+			response.NotFound(c, response.MsgAdTaskNotFound)
+			return
+		}
 		response.InternalServerError(c, response.MsgFailedUpdateAdTask)
 		return
 	}
 
-	// 后端只返回UTC标准时间，不进行时区转换
 	response.SuccessData(c, response.MsgAdTaskUpdatedSuccessfully, adTask)
 }
 
@@ -196,6 +207,10 @@ func (h *AdHandler) deleteAdTask(c *gin.Context) {
 	}
 
 	if err := h.adService.DeleteAdTask(uint(id)); err != nil {
+		if errors.Is(err, common.ErrAdTaskNotFound) {
+			response.NotFound(c, response.MsgAdTaskNotFound)
+			return
+		}
 		response.InternalServerError(c, response.MsgFailedDeleteAdTask)
 		return
 	}
@@ -204,21 +219,24 @@ func (h *AdHandler) deleteAdTask(c *gin.Context) {
 }
 
 // listActiveAdTasks 列出活跃的广告任务
-// 后端只返回UTC标准时间，前端负责时区转换
 func (h *AdHandler) listActiveAdTasks(c *gin.Context) {
 	page, pageSize := util.ParsePaginationQuery(
 		c.DefaultQuery("page", "1"),
 		c.DefaultQuery("page_size", "10"),
 	)
 
-	// 构建筛选参数
 	filters := make(map[string]interface{})
 	validationDetails := make([]response.ErrorDetail, 0)
 	if name := c.Query("name"); name != "" {
 		filters["name"] = name
 	}
-	if status := c.Query("status"); status != "" {
-		filters["status"] = status
+	if status := strings.TrimSpace(c.Query("status")); status != "" {
+		if strings.ToLower(status) != "active" {
+			validationDetails = append(validationDetails, response.ErrorDetail{
+				Field:   "status",
+				Message: "status must be active or omitted (this endpoint only lists active tasks)",
+			})
+		}
 	}
 	if startTime, ok, detail := util.ParseOptionalRFC3339Query("start_time", c.Query("start_time")); detail != nil {
 		validationDetails = append(validationDetails, *detail)
@@ -239,7 +257,6 @@ func (h *AdHandler) listActiveAdTasks(c *gin.Context) {
 		}
 	}
 
-	// 构建排序参数
 	sortField := c.DefaultQuery("sort_field", "id")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
 	sortValidation := util.ValidateSortParams(sortField, sortOrder, map[string]struct{}{
@@ -263,43 +280,5 @@ func (h *AdHandler) listActiveAdTasks(c *gin.Context) {
 		return
 	}
 
-	// 后端只返回UTC标准时间，不进行时区转换
 	response.SuccessPaginated(c, response.MsgActiveAdTasksRetrievedSuccessfully, ads, total, page, pageSize)
-}
-
-// getAds 获取广告任务（外部接口，只支持POST）
-// 后端只返回UTC标准时间，前端负责时区转换
-func (h *AdHandler) getAds(c *gin.Context) {
-	// 获取活跃的广告任务
-	ads, err := h.adService.GetActiveAdTasks()
-	if err != nil {
-		response.InternalServerError(c, response.MsgFailedRetrieveAdTasks)
-		return
-	}
-
-	// 将任务数据序列化为JSON
-	adsJSON, err := json.Marshal(ads)
-	if err != nil {
-		response.InternalServerError(c, response.MsgFailedSerializeData)
-		return
-	}
-
-	// 加密数据
-	encryptedData, err := h.aesUtils.Encrypt(string(adsJSON))
-	if err != nil {
-		response.InternalServerError(c, response.MsgFailedEncryptData)
-		return
-	}
-
-	// 返回加密后的响应
-	responseData := gin.H{
-		"msg":  response.MsgSuccessLowercase,
-		"code": 200,
-		"data": encryptedData,
-		"jsc":  "", // 广告位判断js代码
-		"jscd": "", // 跳转详情页js代码
-		"jsch": "", // 搜索新增, 获取content height的js代码
-	}
-
-	response.SuccessData(c, response.MsgSuccess, responseData)
 }

@@ -269,4 +269,37 @@ export const batchUpdateAdTasks = (ids, data) => {
   return apiClient.put('/admin/ads/batch', { ids, data });
 };
 
+// IP 访问控制
+export const getIPAccessStatus = () => {
+  return apiClient.get('/admin/system/ip-access/status');
+};
+
+export const getIPBlacklist = () => {
+  return apiClient.get('/admin/system/ip-blacklist');
+};
+
+export const addIPBlacklist = (data) => {
+  return apiClient.post('/admin/system/ip-blacklist', data);
+};
+
+export const removeIPBlacklist = (ip) => {
+  return apiClient.delete(`/admin/system/ip-blacklist/${encodeURIComponent(ip)}`);
+};
+
+export const getIPWhitelist = () => {
+  return apiClient.get('/admin/system/ip-whitelist');
+};
+
+export const addIPWhitelist = (data) => {
+  return apiClient.post('/admin/system/ip-whitelist', data);
+};
+
+export const removeIPWhitelist = (ip) => {
+  return apiClient.delete(`/admin/system/ip-whitelist/${encodeURIComponent(ip)}`);
+};
+
+export const getSystemConfig = () => apiClient.get('/admin/system/config');
+export const saveSystemConfig = (payload) => apiClient.put('/admin/system/config', payload);
+export const applyHotSystemConfig = () => apiClient.post('/admin/system/config/apply-hot');
+
 export default apiClient;

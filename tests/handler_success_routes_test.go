@@ -107,8 +107,8 @@ func TestReportListRouteSuccessWithMetaAndFilters(t *testing.T) {
 	protected.Use(injectPermissions("report:read"))
 
 	fakeSvc := &fakeReportService{}
-	handler := apireport.NewReportHandlerWithService(fakeSvc, nil)
-	handler.SetupRoutes(engine, public, protected)
+	handler := apireport.NewReportHandlerWithService(fakeSvc)
+	handler.SetupRoutes(public, protected)
 
 	start := "2026-04-20T00:00:00Z"
 	end := "2026-04-20T02:00:00Z"

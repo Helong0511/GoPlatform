@@ -98,15 +98,24 @@ func (s *UserService) ValidateAPIKey(apiKey, requiredScope, ip string) (*User, e
 	if !scopeAllowed(key.Scope, requiredScope) {
 		return nil, common.ErrForbidden
 	}
-	_ = s.touchAPIKeyLastUsed(key.ID, ip)
+	keyID, clientIP := key.ID, ip
+	go func() {
+		_ = s.touchAPIKeyLastUsed(keyID, clientIP)
+	}()
 	return s.GetUserByID(key.UserID)
 }
 
 func scopeAllowed(granted, required string) bool {
 	granted = strings.TrimSpace(strings.ToLower(granted))
 	required = strings.TrimSpace(strings.ToLower(required))
-	if granted == "" || granted == "all" || required == "" {
+	if required == "" {
 		return true
+	}
+	if granted == "all" {
+		return true
+	}
+	if granted == "" {
+		return false
 	}
 	for _, item := range strings.Split(granted, ",") {
 		if strings.TrimSpace(strings.ToLower(item)) == required {
@@ -122,7 +131,6 @@ func normalizeAndValidateScope(scope string) (string, bool) {
 		return "all", true
 	}
 	allowed := map[string]struct{}{
-		"task:read":    {},
 		"report:write": {},
 	}
 	seen := map[string]struct{}{}

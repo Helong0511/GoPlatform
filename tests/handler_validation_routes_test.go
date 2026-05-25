@@ -17,11 +17,10 @@ func TestAdActiveRouteValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	engine := gin.New()
-	public := engine.Group("/api")
 	protected := engine.Group("/api/admin")
 	protected.Use(injectPermissions("ad:read"))
-	handler := apiad.NewAdHandler(nil, nil)
-	handler.SetupRoutes(engine, public, protected)
+	handler := apiad.NewAdHandler(nil)
+	handler.SetupRoutes(protected)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -55,8 +54,8 @@ func TestReportListRouteValidation(t *testing.T) {
 	public := engine.Group("/api")
 	protected := engine.Group("/api/admin")
 	protected.Use(injectPermissions("report:read"))
-	handler := apireport.NewReportHandler(nil, nil)
-	handler.SetupRoutes(engine, public, protected)
+	handler := apireport.NewReportHandler(nil)
+	handler.SetupRoutes(public, protected)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -80,6 +79,37 @@ func TestReportListRouteValidation(t *testing.T) {
 
 	assertHasErrorField(t, resp.Errors, "ad_id")
 	assertHasErrorField(t, resp.Errors, "end_time")
+}
+
+func TestAdActiveRouteRejectsNonActiveStatusFilter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	protected := engine.Group("/api/admin")
+	protected.Use(injectPermissions("ad:read"))
+	handler := apiad.NewAdHandler(nil)
+	handler.SetupRoutes(protected)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/admin/ads/active?status=paused",
+		nil,
+	)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+
+	var resp response.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if resp.Code != response.CodeValidationError {
+		t.Fatalf("expected code %d, got %d", response.CodeValidationError, resp.Code)
+	}
+	assertHasErrorField(t, resp.Errors, "status")
 }
 
 func assertHasErrorField(t *testing.T, details []response.ErrorDetail, field string) {

@@ -21,6 +21,8 @@ DROP TABLE IF EXISTS user_roles CASCADE;
 DROP TABLE IF EXISTS permissions CASCADE;
 DROP TABLE IF EXISTS roles CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS ip_whitelist_audit CASCADE;
+DROP TABLE IF EXISTS ip_blacklist_audit CASCADE;
 DROP TABLE IF EXISTS departments CASCADE;
 -- 创建部门表
 CREATE TABLE IF NOT EXISTS departments (
@@ -879,3 +881,27 @@ VALUES
     ('市场部', '市场营销部门', true),
     ('销售部', '销售业务部门', true),
     ('财务部', '财务管理部门', true) ON CONFLICT (name) DO NOTHING;
+
+-- IP 黑名单审计表（可选；应用以内存 + Redis 为主，见 sql/ip_blacklist_postgres.sql）
+CREATE TABLE IF NOT EXISTS ip_blacklist_audit (
+    id          BIGSERIAL PRIMARY KEY,
+    ip          INET NOT NULL,
+    reason      VARCHAR(255) NOT NULL,
+    banned_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at  TIMESTAMPTZ,
+    source      VARCHAR(64) NOT NULL DEFAULT 'auto',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ip_blacklist_audit_ip ON ip_blacklist_audit (ip);
+CREATE INDEX IF NOT EXISTS idx_ip_blacklist_audit_banned_at ON ip_blacklist_audit (banned_at DESC);
+
+-- IP 白名单审计表（可选；见 sql/ip_whitelist_postgres.sql）
+CREATE TABLE IF NOT EXISTS ip_whitelist_audit (
+    id         BIGSERIAL PRIMARY KEY,
+    ip         INET NOT NULL,
+    remark     VARCHAR(255) NOT NULL DEFAULT '',
+    source     VARCHAR(64) NOT NULL DEFAULT 'manual',
+    added_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ip_whitelist_audit_ip ON ip_whitelist_audit (ip);

@@ -35,8 +35,8 @@ func TestRegisterDisabledReturnsForbidden(t *testing.T) {
 	engine := gin.New()
 	public := engine.Group("/api")
 	protected := engine.Group("/api/admin")
-	handler := apiauth.NewAuthHandler(nil, "test-secret", 0, false)
-	handler.SetupRoutes(public, protected)
+	handler := apiauth.NewAuthHandler(nil, "test-secret", "ad-platform", "ad-platform-api", 0, false)
+	handler.SetupRoutes(public, protected, nil, nil)
 
 	body := []byte(`{"username":"u1","password":"123456","email":"u1@example.com"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/register", bytes.NewReader(body))
@@ -66,8 +66,8 @@ func TestReportBatchRoutePermission(t *testing.T) {
 		protected := engine.Group("/api/admin")
 		protected.Use(injectPermissions("report:read"))
 
-		handler := apireport.NewReportHandlerWithService(&fakeBatchReportService{}, nil)
-		handler.SetupRoutes(engine, public, protected)
+		handler := apireport.NewReportHandlerWithService(&fakeBatchReportService{})
+		handler.SetupRoutes(public, protected)
 
 		body := []byte(`{"reports":[{"action":"click"}]}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/admin/reports/batch", bytes.NewReader(body))
@@ -86,8 +86,8 @@ func TestReportBatchRoutePermission(t *testing.T) {
 		protected := engine.Group("/api/admin")
 		protected.Use(injectPermissions("report:create"))
 
-		handler := apireport.NewReportHandlerWithService(&fakeBatchReportService{}, nil)
-		handler.SetupRoutes(engine, public, protected)
+		handler := apireport.NewReportHandlerWithService(&fakeBatchReportService{})
+		handler.SetupRoutes(public, protected)
 
 		body := []byte(`{"reports":[{"action":"click"}]}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/admin/reports/batch", bytes.NewReader(body))
@@ -101,12 +101,37 @@ func TestReportBatchRoutePermission(t *testing.T) {
 	})
 }
 
+func TestReportPublicRouteRequiresAPIKeyWhenGuardProvided(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	public := engine.Group("/api")
+	protected := engine.Group("/api/admin")
+
+	handler := apireport.NewReportHandlerWithService(&fakeBatchReportService{})
+	guard := func(c *gin.Context) {
+		response.Unauthorized(c, response.MsgAPIKeyRequired)
+		c.Abort()
+	}
+	handler.SetupRoutes(public, protected, guard)
+
+	body := []byte(`{"action":"click","user_id":"u1"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/report", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d without api key, got %d", http.StatusUnauthorized, w.Code)
+	}
+}
+
 func TestSystemRootEndpointRegisterVisibility(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Run("register hidden when disabled", func(t *testing.T) {
 		engine := gin.New()
-		handler := apisystem.NewSystemHandler(false)
+		handler := apisystem.NewSystemHandler(false, nil, nil, nil)
 		handler.SetupRoutes(engine)
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -132,7 +157,7 @@ func TestSystemRootEndpointRegisterVisibility(t *testing.T) {
 
 	t.Run("register shown when enabled", func(t *testing.T) {
 		engine := gin.New()
-		handler := apisystem.NewSystemHandler(true)
+		handler := apisystem.NewSystemHandler(true, nil, nil, nil)
 		handler.SetupRoutes(engine)
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)

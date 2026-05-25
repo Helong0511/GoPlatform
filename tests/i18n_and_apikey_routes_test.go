@@ -22,10 +22,12 @@ type fakeAPIKeyUserService struct{}
 func (f *fakeAPIKeyUserService) ListUsers(page, pageSize int) ([]admin.User, int64, error) {
 	return []admin.User{}, 0, nil
 }
-func (f *fakeAPIKeyUserService) GetUserByID(id uint) (*admin.User, error) { return &admin.User{ID: id}, nil }
-func (f *fakeAPIKeyUserService) CreateUser(user *admin.User) error        { return nil }
-func (f *fakeAPIKeyUserService) UpdateUser(user *admin.User) error        { return nil }
-func (f *fakeAPIKeyUserService) DeleteUser(id uint) error                 { return nil }
+func (f *fakeAPIKeyUserService) GetUserByID(id uint) (*admin.User, error) {
+	return &admin.User{ID: id}, nil
+}
+func (f *fakeAPIKeyUserService) CreateUser(user *admin.User) error { return nil }
+func (f *fakeAPIKeyUserService) UpdateUser(user *admin.User) error { return nil }
+func (f *fakeAPIKeyUserService) DeleteUser(id uint) error          { return nil }
 func (f *fakeAPIKeyUserService) EnableUser(id, operatorID uint, ip string) error {
 	return nil
 }
@@ -150,7 +152,7 @@ func TestSystemI18NMissingAndResetRoutes(t *testing.T) {
 	protected := engine.Group("/api/admin")
 	protected.Use(injectPermissions("user:read", "user:update"))
 
-	handler := apisystem.NewSystemHandler(false)
+	handler := apisystem.NewSystemHandler(false, nil, nil, nil)
 	handler.SetupAdminRoutes(protected)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/system/i18n-missing", nil)
@@ -211,4 +213,3 @@ func TestSystemI18NMissingAndResetRoutes(t *testing.T) {
 		t.Fatalf("expected zh-CN missing list to be empty after reset")
 	}
 }
-

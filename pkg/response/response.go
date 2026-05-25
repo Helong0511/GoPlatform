@@ -20,19 +20,21 @@ const (
 )
 
 const (
-	ReasonMissingAuthHeader    = "missing_auth_header"
-	ReasonInvalidBearerFormat  = "invalid_bearer_format"
-	ReasonMissingBearerToken   = "missing_bearer_token"
-	ReasonInvalidOrExpiredToken = "invalid_or_expired_token"
-	ReasonUserNotAuthenticated = "user_not_authenticated"
-	ReasonUserLocked           = "user_locked"
+	ReasonMissingAuthHeader      = "missing_auth_header"
+	ReasonInvalidBearerFormat    = "invalid_bearer_format"
+	ReasonMissingBearerToken     = "missing_bearer_token"
+	ReasonInvalidOrExpiredToken  = "invalid_or_expired_token"
+	ReasonUserNotAuthenticated   = "user_not_authenticated"
+	ReasonInvalidUserPrincipal   = "invalid_user_principal"
+	ReasonUserLocked             = "user_locked"
 	ReasonInsufficientPermission = "insufficient_permission"
-	ReasonDepartmentNotAssigned = "department_not_assigned"
-	ReasonMissingAPIKey        = "missing_api_key"
-	ReasonInvalidAPIKey        = "invalid_api_key"
-	ReasonAPIKeyScopeDenied    = "api_key_scope_denied"
-	ReasonRateLimited          = "rate_limited"
-	ReasonCircuitOpen          = "circuit_breaker_open"
+	ReasonDepartmentNotAssigned  = "department_not_assigned"
+	ReasonMissingAPIKey          = "missing_api_key"
+	ReasonInvalidAPIKey          = "invalid_api_key"
+	ReasonAPIKeyScopeDenied      = "api_key_scope_denied"
+	ReasonRateLimited            = "rate_limited"
+	ReasonCircuitOpen            = "circuit_breaker_open"
+	ReasonIPBlacklisted          = "ip_blacklisted"
 )
 
 // ResponseCode 响应状态码类型
@@ -44,13 +46,13 @@ const (
 	CodeSuccess ResponseCode = 200
 
 	// 客户端错误 (4xx)
-	CodeBadRequest          ResponseCode = 400 // 请求参数错误
-	CodeUnauthorized        ResponseCode = 401 // 未授权
-	CodeForbidden           ResponseCode = 403 // 禁止访问
-	CodeNotFound            ResponseCode = 404 // 资源不存在
-	CodeMethodNotAllowed    ResponseCode = 405 // 方法不允许
-	CodeRequestTimeout      ResponseCode = 408 // 请求超时
-	CodeTooManyRequests     ResponseCode = 429 // 请求过于频繁
+	CodeBadRequest       ResponseCode = 400 // 请求参数错误
+	CodeUnauthorized     ResponseCode = 401 // 未授权
+	CodeForbidden        ResponseCode = 403 // 禁止访问
+	CodeNotFound         ResponseCode = 404 // 资源不存在
+	CodeMethodNotAllowed ResponseCode = 405 // 方法不允许
+	CodeRequestTimeout   ResponseCode = 408 // 请求超时
+	CodeTooManyRequests  ResponseCode = 429 // 请求过于频繁
 
 	// 服务端错误 (5xx)
 	CodeInternalServerError ResponseCode = 500 // 服务器内部错误
@@ -58,19 +60,19 @@ const (
 	CodeServiceUnavailable  ResponseCode = 503 // 服务不可用
 
 	// 业务错误 (10xx)
-	CodeValidationError     ResponseCode = 1001 // 数据验证失败
-	CodeDuplicateEntry      ResponseCode = 1002 // 重复条目
-	CodePasswordError       ResponseCode = 1003 // 密码错误
-	CodeUserDisabled        ResponseCode = 1004 // 用户已禁用
-	CodeResourceInUse       ResponseCode = 1005 // 资源被占用
+	CodeValidationError ResponseCode = 1001 // 数据验证失败
+	CodeDuplicateEntry  ResponseCode = 1002 // 重复条目
+	CodePasswordError   ResponseCode = 1003 // 密码错误
+	CodeUserDisabled    ResponseCode = 1004 // 用户已禁用
+	CodeResourceInUse   ResponseCode = 1005 // 资源被占用
 )
 
 // Response 统一API响应结构
 type Response struct {
-	Code    ResponseCode `json:"code"`              // 响应状态码
-	Message string       `json:"message"`           // 响应消息
-	Data    interface{}  `json:"data,omitempty"`    // 响应数据（可选）
-	Meta    *Meta        `json:"meta,omitempty"`    // 元数据（分页等，可选）
+	Code    ResponseCode  `json:"code"`             // 响应状态码
+	Message string        `json:"message"`          // 响应消息
+	Data    interface{}   `json:"data,omitempty"`   // 响应数据（可选）
+	Meta    *Meta         `json:"meta,omitempty"`   // 元数据（分页等，可选）
 	Errors  []ErrorDetail `json:"errors,omitempty"` // 错误详情列表（可选）
 }
 
@@ -84,16 +86,16 @@ type Meta struct {
 
 // ErrorDetail 错误详情结构
 type ErrorDetail struct {
-	Field   string `json:"field,omitempty"`   // 字段名（验证错误时使用）
-	Message string `json:"message"`           // 错误消息
+	Field   string `json:"field,omitempty"` // 字段名（验证错误时使用）
+	Message string `json:"message"`         // 错误消息
 }
 
 // AppError 应用错误结构
 type AppError struct {
-	Code       ResponseCode   // 错误码
-	Message    string         // 用户友好的错误消息
-	Err        error          // 原始错误（用于调试）
-	Details    []ErrorDetail  // 错误详情
+	Code    ResponseCode  // 错误码
+	Message string        // 用户友好的错误消息
+	Err     error         // 原始错误（用于调试）
+	Details []ErrorDetail // 错误详情
 }
 
 // NewAppError 创建新的应用错误
@@ -333,4 +335,3 @@ func InternalServerError(c *gin.Context, message string) {
 func TooManyRequests(c *gin.Context, message string) {
 	Error(c, CodeTooManyRequests, message)
 }
-

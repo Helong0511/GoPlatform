@@ -13,6 +13,8 @@ const AdManagement = lazy(() => import('./pages/AdManagement'));
 const DepartmentManagement = lazy(() => import('./pages/DepartmentManagement'));
 const ClientManagement = lazy(() => import('./pages/ClientManagement'));
 const AdReportManagement = lazy(() => import('./pages/AdReportManagement'));
+const IPAccessManagement = lazy(() => import('./pages/IPAccessManagement'));
+const SystemConfigManagement = lazy(() => import('./pages/SystemConfigManagement'));
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -101,6 +103,8 @@ function App() {
         <Route path="clients" element={<ClientManagement />} />
         <Route path="ads" element={<AdManagement />} />
         <Route path="ad-reports" element={<AdReportManagement />} />
+        <Route path="ip-access" element={<IPAccessManagement />} />
+        <Route path="system-config" element={<SystemConfigManagement />} />
       </Route>
     </Routes>
   );

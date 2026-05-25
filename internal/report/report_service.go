@@ -175,7 +175,9 @@ func (s *ReportService) batchInsert() {
 	reportLogger.Info("Successfully inserted %d reports", len(batchCopy))
 }
 
-// ConsumeReports 消费Pulsar消息并批量写入数据库
+const maxPulsarPoisonRedeliveries uint32 = 5
+
+// ConsumeReports 消费 Pulsar 消息并同步写入数据库；落库成功后 Ack；失败 Nack 重试；毒消息超限后 Ack 丢弃。
 func (s *ReportService) ConsumeReports(pulsarConsumer *pulsar.PulsarConsumer) {
 	for {
 		msg, err := pulsarConsumer.Consume()
@@ -184,29 +186,33 @@ func (s *ReportService) ConsumeReports(pulsarConsumer *pulsar.PulsarConsumer) {
 			continue
 		}
 
-		// 解析消息
 		var report AdReport
 		if err := json.Unmarshal(msg.Payload(), &report); err != nil {
-			reportLogger.Error("Failed to unmarshal message: %v", err)
-			// 确认消息，避免消息重复消费
-			pulsarConsumer.Consumer.Ack(msg)
+			if msg.RedeliveryCount() >= maxPulsarPoisonRedeliveries {
+				reportLogger.Error("dropping poison pulsar message after %d redeliveries: %v", msg.RedeliveryCount(), err)
+				pulsarConsumer.Consumer.Ack(msg)
+			} else {
+				reportLogger.Error("failed to unmarshal pulsar message (nack): %v", err)
+				pulsarConsumer.Consumer.Nack(msg)
+			}
 			continue
 		}
 
-		// 添加到批次
-		s.batchMutex.Lock()
-		s.batch = append(s.batch, report)
-		batchLen := len(s.batch)
-		s.batchMutex.Unlock()
-
-		// 如果批次达到阈值，立即处理
-		if batchLen >= s.batchSize {
-			s.batchInsert()
+		if err := s.persistReportFromQueue(&report); err != nil {
+			reportLogger.Error("Failed to persist report from queue: %v", err)
+			pulsarConsumer.Consumer.Nack(msg)
+			continue
 		}
 
-		// 确认消息
 		pulsarConsumer.Consumer.Ack(msg)
 	}
+}
+
+func (s *ReportService) persistReportFromQueue(report *AdReport) error {
+	if err := s.ensureDBReady(); err != nil {
+		return err
+	}
+	return s.db.DB.Create(report).Error
 }
 
 // Close 关闭服务
@@ -270,7 +276,7 @@ func (s *ReportService) GetReportStats() (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	// 计算上报率（这里假设上报率是指点击数占总上报数的比例）
+	// report_rate：totalClicks/totalReports 折算为百分比（近似「每条上报对应点击量」的均值比例），并非漏斗意义上的「上报到达率」。
 	reportRate := 0.0
 	if totalReports > 0 {
 		reportRate = float64(totalClicks) / float64(totalReports) * 100
@@ -310,7 +316,7 @@ func (s *ReportService) GetReportStatsByTimezone(timezone string) (map[string]in
 		return nil, err
 	}
 
-	// 计算上报率（这里假设上报率是指点击数占总上报数的比例）
+	// report_rate：totalClicks/totalReports 折算为百分比，语义见 GetReportStats。
 	reportRate := 0.0
 	if totalReports > 0 {
 		reportRate = float64(totalClicks) / float64(totalReports) * 100

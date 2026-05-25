@@ -128,19 +128,47 @@ func (h *UserHandler) getUser(c *gin.Context) {
 	response.SuccessData(c, response.MsgUserRetrievedSuccessfully, user)
 }
 
+type userWriteRequest struct {
+	Username     string `json:"username" binding:"required"`
+	Email        string `json:"email" binding:"required,email"`
+	Password     string `json:"password" binding:"required"`
+	Name         string `json:"name"`
+	Phone        string `json:"phone"`
+	DepartmentID *uint  `json:"department_id"`
+	Timezone     string `json:"timezone"`
+}
+
+func (req *userWriteRequest) toUser() *admin.User {
+	return &admin.User{
+		Username:     req.Username,
+		Email:        req.Email,
+		Password:     req.Password,
+		Name:         req.Name,
+		Phone:        req.Phone,
+		DepartmentID: req.DepartmentID,
+		Timezone:     req.Timezone,
+	}
+}
+
 // createUser 创建用户
 func (h *UserHandler) createUser(c *gin.Context) {
-	var user admin.User
-	if err := c.ShouldBindJSON(&user); err != nil {
+	var req userWriteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, response.MsgInvalidUserData)
 		return
 	}
 
-	if err := h.userService.CreateUser(&user); err != nil {
+	user := req.toUser()
+	if err := h.userService.CreateUser(user); err != nil {
+		if errors.Is(err, common.ErrWeakPassword) {
+			response.Error(c, response.CodePasswordError, response.MsgPasswordDoesNotMeetPolicy)
+			return
+		}
 		response.InternalServerError(c, response.MsgFailedCreateUser)
 		return
 	}
 
+	user.Password = ""
 	response.Created(c, response.MsgUserCreatedSuccessfully, user)
 }
 
@@ -152,18 +180,44 @@ func (h *UserHandler) updateUser(c *gin.Context) {
 		return
 	}
 
-	var user admin.User
-	if err := c.ShouldBindJSON(&user); err != nil {
+	var req struct {
+		Username     string `json:"username"`
+		Email        string `json:"email"`
+		Password     string `json:"password"`
+		Name         string `json:"name"`
+		Phone        string `json:"phone"`
+		DepartmentID *uint  `json:"department_id"`
+		Timezone     string `json:"timezone"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, response.MsgInvalidUserData)
 		return
 	}
 
-	user.ID = uint(id)
-	if err := h.userService.UpdateUser(&user); err != nil {
+	user := &admin.User{
+		ID:           uint(id),
+		Username:     req.Username,
+		Email:        req.Email,
+		Password:     req.Password,
+		Name:         req.Name,
+		Phone:        req.Phone,
+		DepartmentID: req.DepartmentID,
+		Timezone:     req.Timezone,
+	}
+	if err := h.userService.UpdateUser(user); err != nil {
+		if errors.Is(err, common.ErrWeakPassword) {
+			response.Error(c, response.CodePasswordError, response.MsgPasswordDoesNotMeetPolicy)
+			return
+		}
+		if errors.Is(err, common.ErrUserNotFound) {
+			response.NotFound(c, response.MsgUserNotFound)
+			return
+		}
 		response.InternalServerError(c, response.MsgFailedUpdateUser)
 		return
 	}
 
+	user.Password = ""
 	response.SuccessData(c, response.MsgUserUpdatedSuccessfully, user)
 }
 
@@ -176,6 +230,10 @@ func (h *UserHandler) deleteUser(c *gin.Context) {
 	}
 
 	if err := h.userService.DeleteUser(uint(id)); err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			response.NotFound(c, response.MsgUserNotFound)
+			return
+		}
 		response.InternalServerError(c, response.MsgFailedDeleteUser)
 		return
 	}
@@ -205,6 +263,10 @@ func (h *UserHandler) enableUser(c *gin.Context) {
 	clientIP := c.ClientIP()
 
 	if err := h.userService.EnableUser(uint(id), uint(operatorID), clientIP); err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			response.NotFound(c, response.MsgUserNotFound)
+			return
+		}
 		response.InternalServerError(c, response.MsgFailedEnableUser)
 		return
 	}
@@ -234,6 +296,10 @@ func (h *UserHandler) disableUser(c *gin.Context) {
 	clientIP := c.ClientIP()
 
 	if err := h.userService.DisableUser(uint(id), uint(operatorID), clientIP); err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			response.NotFound(c, response.MsgUserNotFound)
+			return
+		}
 		response.InternalServerError(c, response.MsgFailedDisableUser)
 		return
 	}
@@ -332,6 +398,10 @@ func (h *UserHandler) reviewRegistration(c *gin.Context) {
 	}
 	result, err := regSvc.ReviewRegistration(uint(id), uint(operatorID), req.Approved, req.Reason)
 	if err != nil {
+		if errors.Is(err, common.ErrRegistrationAlreadyReviewed) {
+			response.Error(c, response.CodeResourceInUse, response.MsgRegistrationAlreadyReviewed)
+			return
+		}
 		if common.IsDuplicateEntryError(err) {
 			response.Error(c, response.CodeDuplicateEntry, response.MsgRegistrationConflictOnApprove)
 			return
@@ -370,7 +440,7 @@ func (h *UserHandler) sendReviewNotification(result *admin.RegistrationReviewRes
 	var body string
 	if result.Approved {
 		subject = "注册审核通过"
-		body = fmt.Sprintf("您好，%s：\n\n您的注册申请已通过审核。\n账号：%s\n初始密码：%s\nAPI Key：%s\n\n请尽快登录后修改密码并妥善保管密钥。", result.Username, result.Username, result.Password, result.APIKey)
+		body = fmt.Sprintf("您好，%s：\n\n您的注册申请已通过审核。\n账号：%s\n初始密码：%s\nAPI Key：%s\n\n请尽快登录后修改密码并妥善保管密钥。", result.Username, result.Username, result.InitialPassword(), result.APIKey())
 	} else {
 		subject = "注册审核未通过"
 		body = fmt.Sprintf("您好，%s：\n\n您的注册申请未通过审核。\n原因：%s\n\n如需帮助请联系管理员。", result.Username, strings.TrimSpace(reason))

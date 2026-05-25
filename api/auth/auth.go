@@ -9,8 +9,8 @@ import (
 
 	"ad-platform/internal/admin"
 	"ad-platform/internal/common"
-	"ad-platform/pkg/notify"
 	"ad-platform/pkg/auth"
+	"ad-platform/pkg/notify"
 	"ad-platform/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +26,7 @@ type AuthHandler struct {
 }
 
 // NewAuthHandler 创建认证处理器
-func NewAuthHandler(userService *admin.UserService, jwtSecret string, tokenTTL time.Duration, allowPublicRegister bool, emailSender ...notify.EmailSender) *AuthHandler {
+func NewAuthHandler(userService *admin.UserService, jwtSecret, jwtIssuer, jwtAudience string, tokenTTL time.Duration, allowPublicRegister bool, emailSender ...notify.EmailSender) *AuthHandler {
 	if tokenTTL <= 0 {
 		tokenTTL = time.Hour
 	}
@@ -36,18 +36,28 @@ func NewAuthHandler(userService *admin.UserService, jwtSecret string, tokenTTL t
 	}
 	return &AuthHandler{
 		userService:         userService,
-		authMiddleware:      auth.NewAuthMiddleware(jwtSecret),
+		authMiddleware:      auth.NewAuthMiddleware(jwtSecret, jwtIssuer, jwtAudience),
 		tokenTTL:            tokenTTL,
 		allowPublicRegister: allowPublicRegister,
 		emailSender:         sender,
 	}
 }
 
-// SetupRoutes 设置认证相关路由
-func (h *AuthHandler) SetupRoutes(public *gin.RouterGroup, protected *gin.RouterGroup) {
-	// 公开接口
-	public.POST("/login", h.login)
-	public.POST("/register", h.register)
+// SetupRoutes 设置认证相关路由；loginRate/registerRate 非 nil 时分别用于登录/注册专用限流。
+func (h *AuthHandler) SetupRoutes(public *gin.RouterGroup, protected *gin.RouterGroup, loginRate, registerRate gin.HandlerFunc) {
+	loginChain := make([]gin.HandlerFunc, 0, 2)
+	if loginRate != nil {
+		loginChain = append(loginChain, loginRate)
+	}
+	loginChain = append(loginChain, h.login)
+	public.POST("/login", loginChain...)
+
+	regChain := make([]gin.HandlerFunc, 0, 2)
+	if registerRate != nil {
+		regChain = append(regChain, registerRate)
+	}
+	regChain = append(regChain, h.register)
+	public.POST("/register", regChain...)
 
 	// 应用认证中间件
 	protected.Use(h.authMiddleware.AuthMiddleware())
@@ -84,31 +94,43 @@ func (h *AuthHandler) login(c *gin.Context) {
 		return
 	}
 
-	// 生成JWT
-	roleName := ""
-	if len(user.Roles) > 0 {
-		roleName = user.Roles[0].Name
+	// 生成 JWT：写入全部角色（去重保序），首个角色同时写入 role 声明以兼容旧客户端
+	seen := make(map[string]struct{}, len(user.Roles))
+	roleNames := make([]string, 0, len(user.Roles))
+	for _, r := range user.Roles {
+		n := strings.TrimSpace(r.Name)
+		if n == "" {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		roleNames = append(roleNames, n)
 	}
 	// 获取用户时区，默认使用 Asia/Shanghai
 	userTimezone := user.Timezone
 	if userTimezone == "" {
 		userTimezone = "Asia/Shanghai"
 	}
-	token, err := h.authMiddleware.GenerateJWT(strconv.Itoa(int(user.ID)), roleName, userTimezone, h.tokenTTL)
+	token, err := h.authMiddleware.GenerateJWT(strconv.Itoa(int(user.ID)), userTimezone, roleNames, h.tokenTTL)
 	if err != nil {
 		response.InternalServerError(c, response.MsgFailedGenerateToken)
 		return
 	}
 
-	// 提取用户的所有权限
-	var permissions []string
+	permSeen := make(map[string]struct{})
+	permissions := make([]string, 0)
 	for _, role := range user.Roles {
 		for _, perm := range role.Permissions {
+			if _, ok := permSeen[perm.Name]; ok {
+				continue
+			}
+			permSeen[perm.Name] = struct{}{}
 			permissions = append(permissions, perm.Name)
 		}
 	}
 
-	// 返回统一格式的响应
 	responseData := gin.H{
 		"token": token,
 		"user": gin.H{
@@ -118,7 +140,7 @@ func (h *AuthHandler) login(c *gin.Context) {
 			"name":        user.Name,
 			"phone":       user.Phone,
 			"timezone":    user.Timezone,
-			"roles":       user.Roles,
+			"roles":       roleNames,
 			"permissions": permissions,
 		},
 	}
@@ -146,7 +168,9 @@ func (h *AuthHandler) register(c *gin.Context) {
 	reg, err := h.userService.CreateRegistration(req.Username, req.Email)
 	if err != nil {
 		if common.IsDuplicateEntryError(err) {
-			response.Error(c, response.CodeDuplicateEntry, response.MsgRegistrationAlreadyExists)
+			response.Created(c, response.MsgRegistrationSubmitted, gin.H{
+				"status": admin.RegistrationStatusPending,
+			})
 			return
 		}
 		response.InternalServerError(c, response.MsgFailedCreateUser)

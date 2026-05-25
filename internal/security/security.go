@@ -45,7 +45,8 @@ type claims struct {
 	jwt.RegisteredClaims
 }
 
-// GenerateJWT 生成JWT令牌
+// GenerateJWT 生成JWT令牌。
+// HTTP API 请优先使用 ad-platform/pkg/auth；此处保留供测试与非 HTTP 场景。
 func (s *SecurityManager) GenerateJWT(userID, role, secret string, exp time.Duration) (string, error) {
 	if strings.TrimSpace(secret) == "" {
 		return "", fmt.Errorf("jwt secret is required")
@@ -72,7 +73,8 @@ func (s *SecurityManager) GenerateJWT(userID, role, secret string, exp time.Dura
 	return token.SignedString([]byte(secret))
 }
 
-// ValidateJWT 验证JWT令牌
+// ValidateJWT 验证JWT令牌。
+// HTTP API 请优先使用 ad-platform/pkg/auth。
 func (s *SecurityManager) ValidateJWT(token, secret string) (bool, error) {
 	if strings.TrimSpace(token) == "" {
 		return false, fmt.Errorf("jwt token is required")
@@ -124,14 +126,16 @@ func (s *SecurityManager) getAESUtils(key string) (*AESUtils, error) {
 	}
 	s.mu.RUnlock()
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cached, ok := s.aesUtilsPool[key]; ok {
+		return cached, nil
+	}
 	aesUtils, err := NewAESUtils(key)
 	if err != nil {
 		return nil, err
 	}
-
-	s.mu.Lock()
 	s.aesUtilsPool[key] = aesUtils
-	s.mu.Unlock()
 	return aesUtils, nil
 }
 

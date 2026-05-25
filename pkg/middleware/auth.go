@@ -2,59 +2,16 @@ package middleware
 
 import (
 	"errors"
-	"net/http"
 	"strconv"
 	"strings"
 
-	"ad-platform/internal/common"
 	"ad-platform/internal/admin"
+	"ad-platform/internal/common"
 	"ad-platform/pkg/auth"
 	"ad-platform/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
-
-// AuthMiddleware 认证中间件
-func AuthMiddleware(userService *admin.UserService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// 从请求头获取token
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": response.MsgAuthHeaderRequired})
-			c.Abort()
-			return
-		}
-
-		// 解析token获取用户信息
-		// 这里简化处理，实际应该使用JWT等认证机制
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": response.MsgBearerFormatRequired})
-			c.Abort()
-			return
-		}
-
-		// 这里应该从token中解析用户ID，这里简化处理
-		username := parts[1]
-		user, err := userService.GetUserByUsername(username)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": response.MsgUserNotFound})
-			c.Abort()
-			return
-		}
-
-		// 检查用户状态
-		if !user.Status {
-			c.JSON(http.StatusForbidden, gin.H{"error": response.MsgUserDisabled})
-			c.Abort()
-			return
-		}
-
-		// 将用户信息存储到上下文中
-		c.Set("user", user)
-		c.Next()
-	}
-}
 
 // UserContextMiddleware 基于JWT用户ID加载用户详情
 func UserContextMiddleware(userService *admin.UserService) gin.HandlerFunc {
@@ -107,7 +64,13 @@ func RBACMiddleware(requiredPermission string) gin.HandlerFunc {
 			return
 		}
 
-		u := user.(*admin.User)
+		u, ok := user.(*admin.User)
+		if !ok {
+			response.SetErrorReason(c, response.ReasonInvalidUserPrincipal)
+			response.InternalServerError(c, response.MsgInvalidUserPrincipal)
+			c.Abort()
+			return
+		}
 
 		// 检查是否为超级管理员
 		for _, role := range u.Roles {
@@ -154,7 +117,13 @@ func DepartmentMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		u := user.(*admin.User)
+		u, ok := user.(*admin.User)
+		if !ok {
+			response.SetErrorReason(c, response.ReasonInvalidUserPrincipal)
+			response.InternalServerError(c, response.MsgInvalidUserPrincipal)
+			c.Abort()
+			return
+		}
 
 		// 检查是否为超级管理员
 		for _, role := range u.Roles {

@@ -42,7 +42,7 @@ func NewPostgresDB(config *util.DatabaseConfig) (*PostgresDB, error) {
 
 	// 配置 GORM
 	gormConfig := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.Default.LogMode(logger.Error),
 		NowFunc: func() time.Time {
 			return time.Now().UTC()
 		},
@@ -99,7 +99,7 @@ func NewPostgresDBCluster(configs []*util.DatabaseConfig) (*PostgresDB, error) {
 		}
 
 		gormConfig := &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Info),
+			Logger: logger.Default.LogMode(logger.Error),
 			NowFunc: func() time.Time {
 				return time.Now().UTC()
 			},
@@ -157,10 +157,10 @@ func buildDialector(config *util.DatabaseConfig) (gorm.Dialector, error) {
 		)
 		return postgres.Open(dsn), nil
 	case "mysql":
-		// parseTime=true 确保 time.Time 正确解析；utf8mb4 兼容 emoji。
+		tlsParam := MySQLTLSQueryParam(config.SSLMode)
 		dsn := fmt.Sprintf(
-			"%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-			config.User, config.Password, config.Host, config.Port, config.DBName,
+			"%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=UTC&%s",
+			config.User, config.Password, config.Host, config.Port, config.DBName, tlsParam,
 		)
 		return mysql.Open(dsn), nil
 	default:
@@ -178,4 +178,19 @@ func (p *PostgresDB) Close() error {
 		return err
 	}
 	return sqlDB.Close()
+}
+
+// MySQLTLSQueryParam 将 database.sslmode 映射为 go-sql-driver/mysql 的 tls 查询参数。
+func MySQLTLSQueryParam(sslmode string) string {
+	sm := strings.ToLower(strings.TrimSpace(sslmode))
+	switch sm {
+	case "", "disable", "false", "0":
+		return "tls=false"
+	case "skip-verify", "skip_verify":
+		return "tls=skip-verify"
+	case "preferred":
+		return "tls=preferred"
+	default:
+		return "tls=true"
+	}
 }

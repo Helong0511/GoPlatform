@@ -1,9 +1,12 @@
 package metrics
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"ad-platform/pkg/logger"
 
@@ -82,25 +85,68 @@ func NewMetrics() *Metrics {
 	return metrics
 }
 
-// StartServer 启动监控服务器
-func StartServer(port int, path string) {
+// PrometheusMetricsHandler 返回 Prometheus 抓取 Handler；bearerToken 非空时要求 Authorization: Bearer <token>。
+func PrometheusMetricsHandler(bearerToken string) http.Handler {
+	inner := promhttp.Handler()
+	token := strings.TrimSpace(bearerToken)
+	if token == "" {
+		return inner
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := bearerTokenFromAuthorization(r.Header.Get("Authorization"))
+		if !constantTimeEqual(got, token) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
+}
+
+func bearerTokenFromAuthorization(raw string) string {
+	raw = strings.TrimSpace(raw)
+	const prefix = "Bearer "
+	if len(raw) >= len(prefix) && strings.EqualFold(raw[:len(prefix)], prefix) {
+		return strings.TrimSpace(raw[len(prefix):])
+	}
+	return raw
+}
+
+func constantTimeEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// StartServer 启动监控服务器（独立 HTTP）；host 为空时监听 0.0.0.0；返回 *http.Server 供进程退出时 Shutdown。
+func StartServer(host string, port int, path string, bearerToken string) *http.Server {
 	if path == "" {
 		path = "/metrics"
 	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		host = "0.0.0.0"
+	}
 	mux := http.NewServeMux()
-	mux.Handle(path, promhttp.Handler())
+	mux.Handle(path, PrometheusMetricsHandler(bearerToken))
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: mux,
+		Addr:              fmt.Sprintf("%s:%d", host, port),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {
-		metricsLogger.Info("Metrics server started on port %d", port)
+		metricsLogger.Info("Metrics server listening on %s:%d", host, port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			metricsLogger.Error("Failed to start metrics server: %v", err)
 		}
 	}()
+	return server
 }
 
 // IncHTTPRequests 增加HTTP请求计数
